@@ -197,22 +197,25 @@ fun QbitSettings(
     onBack: () -> Unit,
 ) {
     var url by remember { mutableStateOf(UrlParts.parse(initial.url, 8080)) }
+    var apiKey by remember { mutableStateOf(initial.apiKey) }
     var user by remember { mutableStateOf(initial.username) }
     var pass by remember { mutableStateOf(initial.password) }
-    val config = QbitConfig(url.toUrl(), user, pass)
+    val config = QbitConfig(url.toUrl(), apiKey, user, pass)
     val probe = autoProbe(config, config.configured) { onTest(config) }
 
     SettingsScaffold(if (onboarding) "Étape 2/2 · qBittorrent" else "qBittorrent", onBack) {
         if (onboarding) Hint("Optionnel : donne accès à l'onglet Téléchargements (progression, pause, suppression).")
         UrlFields(url, onChange = { url = it })
+        SecretField(apiKey, onChange = { apiKey = it }, label = "Clé API (qBittorrent ≥ 5.2)")
+        Hint("qBittorrent → Options → WebUI → Authentication → API Key → Générer. Prioritaire sur le login.")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(value = user, onValueChange = { user = it },
+            OutlinedTextField(value = user, onValueChange = { user = it }, enabled = apiKey.isBlank(),
                 label = { Text("Login") }, singleLine = true, modifier = Modifier.weight(1f))
-            Box(Modifier.weight(1f)) { SecretField(pass, onChange = { pass = it }, label = "Mot de passe", paste = false) }
+            Box(Modifier.weight(1f)) { SecretField(pass, onChange = { pass = it }, label = "Mot de passe", paste = false, enabled = apiKey.isBlank()) }
         }
         Hint(
-            "qBittorrent n'a pas de clé API. Login/mot de passe vides = « Bypass authentication for clients in " +
-                "whitelisted IP subnets » activé dans qBittorrent (Options → WebUI) avec le sous-réseau Tailscale 100.64.0.0/10.",
+            "Sans clé API : login/mot de passe (session par cookie). Tout vide = « Bypass authentication for clients in " +
+                "whitelisted IP subnets » activé dans qBittorrent avec le sous-réseau Tailscale 100.64.0.0/10.",
         )
         ProbeLine(probe)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -260,11 +263,12 @@ private fun ProbeLine(probe: Probe?) {
 
 /** Champ secret : œil pour afficher, bouton coller depuis le presse-papiers. */
 @Composable
-private fun SecretField(value: String, onChange: (String) -> Unit, label: String, paste: Boolean = true) {
+private fun SecretField(value: String, onChange: (String) -> Unit, label: String, paste: Boolean = true, enabled: Boolean = true) {
     var visible by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     OutlinedTextField(
         value = value, onValueChange = onChange,
+        enabled = enabled,
         label = { Text(label) },
         singleLine = true,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),

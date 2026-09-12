@@ -27,6 +27,7 @@ class SettingsStore(private val context: Context) {
     private val qbUrlKey = stringPreferencesKey("qb_url")
     private val qbUserKey = stringPreferencesKey("qb_user")
     private val qbPassKey = stringPreferencesKey("qb_pass_enc")
+    private val qbApiKeyKey = stringPreferencesKey("qb_api_key_enc")
     private val updateCheckKey = longPreferencesKey("update_last_check")
     private val historyKey = stringPreferencesKey("history")
     private val themeKey = stringPreferencesKey("theme")
@@ -40,6 +41,7 @@ class SettingsStore(private val context: Context) {
             ),
             qbit = QbitConfig(
                 url = p[qbUrlKey] ?: "",
+                apiKey = p[qbApiKeyKey]?.let { SecretCrypto.decrypt(it) } ?: "",
                 username = p[qbUserKey] ?: "",
                 password = p[qbPassKey]?.let { SecretCrypto.decrypt(it) } ?: "",
             ),
@@ -55,6 +57,7 @@ class SettingsStore(private val context: Context) {
             p[qbUrlKey] = qb.url
             p[qbUserKey] = qb.username
             p[qbPassKey] = SecretCrypto.encrypt(qb.password)
+            p[qbApiKeyKey] = SecretCrypto.encrypt(qb.apiKey)
         }
     }
 

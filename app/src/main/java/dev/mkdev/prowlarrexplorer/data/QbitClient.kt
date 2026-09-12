@@ -7,7 +7,9 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -22,8 +24,8 @@ import kotlinx.serialization.json.Json
 class QbitError(message: String) : Exception(message)
 
 /**
- * Client WebUI API v2 de qBittorrent. Session par cookie SID (login/mot de passe) ; sans identifiants,
- * on suppose le « bypass » IP activé côté qBittorrent. Un 403 en cours de session → re-login puis rejeu.
+ * Client WebUI API v2 de qBittorrent. Clé API (≥ 5.2) en en-tête Bearer, sinon session par cookie SID
+ * (login/mot de passe), sinon « bypass » IP côté qBittorrent. Un 403 en session cookie → re-login puis rejeu.
  */
 class QbitClient(private val config: () -> QbitConfig) {
 
@@ -66,6 +68,10 @@ class QbitClient(private val config: () -> QbitConfig) {
         loginLock.withLock { if (sessionFor != cfg) login(cfg) }
     }
 
+    private fun HttpRequestBuilder.auth(cfg: QbitConfig) {
+        if (cfg.hasApiKey) header("Authorization", "Bearer ${cfg.apiKey}")
+    }
+
     private suspend fun call(cfg: QbitConfig = config(), retry: Boolean = true, block: suspend () -> HttpResponse): String {
         ensureSession(cfg)
         val r = block()
@@ -75,8 +81,11 @@ class QbitClient(private val config: () -> QbitConfig) {
                 return call(cfg, retry = false, block)
             }
             throw QbitError(
-                if (cfg.hasCredentials) "Session refusée (403)"
-                else "Authentification requise : renseigne login/mot de passe ou active le bypass IP dans qBittorrent",
+                when {
+                    cfg.hasApiKey -> "Clé API refusée (403) : qBittorrent ≥ 5.2 requis, clé à régénérer ?"
+                    cfg.hasCredentials -> "Session refusée (403)"
+                    else -> "Authentification requise : clé API, login/mot de passe, ou bypass IP dans qBittorrent"
+                },
             )
         }
         val text = r.bodyAsText()
@@ -85,10 +94,10 @@ class QbitClient(private val config: () -> QbitConfig) {
     }
 
     suspend fun version(cfg: QbitConfig = config()): String =
-        call(cfg) { http.get("${cfg.url}/api/v2/app/version") }
+        call(cfg) { http.get("${cfg.url}/api/v2/app/version") { auth(cfg) } }
 
     private suspend fun stopStart(cfg: QbitConfig): Boolean = useStopStart ?: run {
-        val v = call(cfg) { http.get("${cfg.url}/api/v2/app/webapiVersion") }.trim()
+        val v = call(cfg) { http.get("${cfg.url}/api/v2/app/webapiVersion") { auth(cfg) } }.trim()
         val parts = v.split('.').mapNotNull { it.toIntOrNull() }
         val recent = (parts.getOrNull(0) ?: 2) > 2 || (parts.getOrNull(1) ?: 0) >= 11
         recent.also { useStopStart = it }
@@ -98,6 +107,7 @@ class QbitClient(private val config: () -> QbitConfig) {
         val cfg = config()
         val text = call(cfg) {
             http.get("${cfg.url}/api/v2/torrents/info") {
+                auth(cfg)
                 parameter("sort", "added_on")
                 parameter("reverse", "true")
             }
@@ -108,13 +118,13 @@ class QbitClient(private val config: () -> QbitConfig) {
     suspend fun pause(hash: String) {
         val cfg = config()
         val path = if (stopStart(cfg)) "stop" else "pause"
-        call(cfg) { http.submitForm("${cfg.url}/api/v2/torrents/$path", Parameters.build { append("hashes", hash) }) }
+        call(cfg) { http.submitForm("${cfg.url}/api/v2/torrents/$path", Parameters.build { append("hashes", hash) }) { auth(cfg) } }
     }
 
     suspend fun resume(hash: String) {
         val cfg = config()
         val path = if (stopStart(cfg)) "start" else "resume"
-        call(cfg) { http.submitForm("${cfg.url}/api/v2/torrents/$path", Parameters.build { append("hashes", hash) }) }
+        call(cfg) { http.submitForm("${cfg.url}/api/v2/torrents/$path", Parameters.build { append("hashes", hash) }) { auth(cfg) } }
     }
 
     suspend fun delete(hash: String, deleteFiles: Boolean) {
@@ -123,7 +133,7 @@ class QbitClient(private val config: () -> QbitConfig) {
             http.submitForm(
                 "${cfg.url}/api/v2/torrents/delete",
                 Parameters.build { append("hashes", hash); append("deleteFiles", deleteFiles.toString()) },
-            )
+            ) { auth(cfg) }
         }
     }
 }

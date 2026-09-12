@@ -122,7 +122,11 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun testConfig(c: QbitConfig): Result<String> = runCatching {
         val n = c.normalized()
         val v = client.version(n)
-        val mode = if (n.hasCredentials) "session ouverte" else "sans authentification (bypass IP)"
+        val mode = when {
+            n.hasApiKey -> "clé API"
+            n.hasCredentials -> "session ouverte"
+            else -> "sans authentification (bypass IP)"
+        }
         "qBittorrent $v — $mode"
     }
 

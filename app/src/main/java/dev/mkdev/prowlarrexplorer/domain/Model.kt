@@ -91,17 +91,20 @@ fun Release.humanAge(): String = when {
 }
 
 /**
- * Connexion à qBittorrent (WebUI API v2). Pas de clé API dans qBittorrent : soit login/mot de passe,
- * soit identifiants vides = « Bypass authentication for whitelisted IP subnets » activé côté qBittorrent.
+ * Connexion à qBittorrent (WebUI API v2), par priorité :
+ *  1. clé API (qBittorrent ≥ 5.2, Options → WebUI → Authentication → API Key) : `Authorization: Bearer qbt_…`,
+ *  2. login / mot de passe : session par cookie SID,
+ *  3. rien : « Bypass authentication for whitelisted IP subnets » activé côté qBittorrent.
  */
-data class QbitConfig(val url: String = "", val username: String = "", val password: String = "") {
+data class QbitConfig(val url: String = "", val apiKey: String = "", val username: String = "", val password: String = "") {
     val configured: Boolean get() = url.isNotBlank()
-    val hasCredentials: Boolean get() = username.isNotBlank()
+    val hasApiKey: Boolean get() = apiKey.isNotBlank()
+    val hasCredentials: Boolean get() = !hasApiKey && username.isNotBlank()
 
     fun normalized(): QbitConfig {
         var u = url.trim().trimEnd('/')
         if (u.isNotEmpty() && !u.contains("://")) u = "http://$u"
-        return copy(url = u, username = username.trim(), password = password)
+        return copy(url = u, apiKey = apiKey.trim(), username = username.trim(), password = password)
     }
 }
 
