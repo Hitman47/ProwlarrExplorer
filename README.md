@@ -21,6 +21,17 @@ envoi d'une release vers le client de téléchargement configuré dans Prowlarr.
   ou via Réglages), téléchargement de l'APK et ouverture de l'installeur. Tant que le
   dépôt est privé, un token GitHub fine-grained (Contents : Read) est requis.
 
+## v0.3
+
+- Recherche : titre lisible (année, saison, chips qualité/langue), tri Seeders / Taille / Date,
+  masquage des 0 seed, historique, glisser vers la droite = envoyer, snackbar « Voir ».
+- « Prowlarr Explorer » dans le menu de sélection de texte et le partage Android.
+- Téléchargements : sections Actifs / En pause / Terminés, badge d'actifs, débit dans l'onglet,
+  glisser = pause/reprise, tirer pour rafraîchir.
+- Réglages : accueil avec état des services, test automatique à la saisie, œil/coller sur les
+  secrets, assistant au premier lancement, thème Clair / Sombre / Système.
+- Tablette en paysage : rail de navigation + fiche dans un volet droit.
+
 ## Build
 
 ```bash

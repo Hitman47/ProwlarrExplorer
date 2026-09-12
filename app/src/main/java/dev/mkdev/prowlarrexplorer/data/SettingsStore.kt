@@ -10,6 +10,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import dev.mkdev.prowlarrexplorer.domain.AppSettings
 import dev.mkdev.prowlarrexplorer.domain.ProwlarrConfig
 import dev.mkdev.prowlarrexplorer.domain.QbitConfig
+import dev.mkdev.prowlarrexplorer.domain.ThemeMode
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -24,6 +28,9 @@ class SettingsStore(private val context: Context) {
     private val qbUserKey = stringPreferencesKey("qb_user")
     private val qbPassKey = stringPreferencesKey("qb_pass_enc")
     private val updateCheckKey = longPreferencesKey("update_last_check")
+    private val historyKey = stringPreferencesKey("history")
+    private val themeKey = stringPreferencesKey("theme")
+    private val listJson = ListSerializer(String.serializer())
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
         AppSettings(
@@ -55,5 +62,32 @@ class SettingsStore(private val context: Context) {
 
     suspend fun markUpdateCheck() {
         context.dataStore.edit { it[updateCheckKey] = System.currentTimeMillis() }
+    }
+
+    /** Dernières requêtes, la plus récente en tête (8 max). */
+    val history: Flow<List<String>> = context.dataStore.data.map { p ->
+        p[historyKey]?.let { runCatching { Json.decodeFromString(listJson, it) }.getOrNull() } ?: emptyList()
+    }
+
+    suspend fun addHistory(query: String) {
+        val q = query.trim()
+        if (q.isEmpty()) return
+        context.dataStore.edit { p ->
+            val cur = p[historyKey]?.let { runCatching { Json.decodeFromString(listJson, it) }.getOrNull() } ?: emptyList()
+            val next = (listOf(q) + cur.filter { !it.equals(q, ignoreCase = true) }).take(8)
+            p[historyKey] = Json.encodeToString(listJson, next)
+        }
+    }
+
+    suspend fun clearHistory() {
+        context.dataStore.edit { it.remove(historyKey) }
+    }
+
+    val theme: Flow<ThemeMode> = context.dataStore.data.map { p ->
+        p[themeKey]?.let { v -> ThemeMode.entries.firstOrNull { it.name == v } } ?: ThemeMode.SYSTEM
+    }
+
+    suspend fun setTheme(mode: ThemeMode) {
+        context.dataStore.edit { it[themeKey] = mode.name }
     }
 }

@@ -107,6 +107,10 @@ data class QbitConfig(val url: String = "", val username: String = "", val passw
 
 data class AppSettings(val prowlarr: ProwlarrConfig = ProwlarrConfig(), val qbit: QbitConfig = QbitConfig())
 
+enum class ThemeMode(val label: String) { SYSTEM("Système"), LIGHT("Clair"), DARK("Sombre") }
+
+enum class SortMode(val label: String) { SEEDERS("Seeders"), SIZE("Taille"), DATE("Date") }
+
 /** Décomposition d'une URL de service pour la saisie : schéma / hôte / port. */
 data class UrlParts(val https: Boolean = false, val host: String = "", val port: String = "") {
     fun toUrl(): String = when {
@@ -144,6 +148,8 @@ data class Torrent(
     val eta: Long = 8640000,
     val state: String = "",
     val category: String = "",
+    /** Octets déjà téléchargés. */
+    val completed: Long = 0,
     @kotlinx.serialization.SerialName("added_on") val addedOn: Long = 0,
     @kotlinx.serialization.SerialName("num_seeds") val numSeeds: Int = 0,
     @kotlinx.serialization.SerialName("num_leechs") val numLeechs: Int = 0,

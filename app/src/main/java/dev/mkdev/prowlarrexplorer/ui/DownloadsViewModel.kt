@@ -16,25 +16,28 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-enum class TorrentFilter(val label: String) { ALL("Tous"), ACTIVE("En cours"), DONE("Terminés") }
+enum class Section(val label: String) { ACTIVE("Actifs"), PAUSED("En pause"), DONE("Terminés") }
+
+fun Torrent.section(): Section = when {
+    !done && paused -> Section.PAUSED
+    !done -> Section.ACTIVE
+    else -> Section.DONE
+}
 
 data class DownloadsState(
     val config: QbitConfig? = null,
     val torrents: List<Torrent> = emptyList(),
-    val filter: TorrentFilter = TorrentFilter.ALL,
     val loaded: Boolean = false,
     val refreshing: Boolean = false,
     val error: String? = null,
     val selected: Torrent? = null,
-    val busy: Boolean = false,
+    /** hash du torrent sur lequel une action est en cours. */
+    val busy: String? = null,
     val message: String? = null,
 ) {
-    val visible: List<Torrent>
-        get() = when (filter) {
-            TorrentFilter.ALL -> torrents
-            TorrentFilter.ACTIVE -> torrents.filter { !it.done }
-            TorrentFilter.DONE -> torrents.filter { it.done }
-        }
+    val sections: List<Pair<Section, List<Torrent>>>
+        get() = Section.entries.mapNotNull { s -> torrents.filter { it.section() == s }.takeIf { it.isNotEmpty() }?.let { s to it } }
+    val activeCount: Int get() = torrents.count { it.section() == Section.ACTIVE }
     val totalDown: Long get() = torrents.sumOf { it.dlspeed }
     val totalUp: Long get() = torrents.sumOf { it.upspeed }
 }
@@ -91,24 +94,26 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             }
     }
 
-    fun setFilter(f: TorrentFilter) = _state.update { it.copy(filter = f) }
+    fun refreshNow() = viewModelScope.launch { refresh() }
+
     fun select(t: Torrent?) = _state.update { it.copy(selected = t) }
 
-    fun togglePause() = action { t -> if (t.paused) client.resume(t.hash) else client.pause(t.hash) }
+    fun togglePause(t: Torrent? = _state.value.selected) = action(t) {
+        if (it.paused) client.resume(it.hash) else client.pause(it.hash)
+    }
 
-    fun delete(withFiles: Boolean) = action(close = true) { t ->
+    fun delete(withFiles: Boolean) = action(_state.value.selected, close = true) { t ->
         client.delete(t.hash, withFiles)
         toast(if (withFiles) "Supprimé avec ses fichiers" else "Retiré de qBittorrent")
     }
 
-    private fun action(close: Boolean = false, block: suspend (Torrent) -> Unit) {
-        val t = _state.value.selected ?: return
-        if (_state.value.busy) return
+    private fun action(t: Torrent?, close: Boolean = false, block: suspend (Torrent) -> Unit) {
+        t ?: return
+        if (_state.value.busy != null) return
         viewModelScope.launch {
-            _state.update { it.copy(busy = true) }
-            runCatching { block(t) }
-                .onFailure { e -> toast(e.short()) }
-            _state.update { it.copy(busy = false, selected = if (close) null else it.selected) }
+            _state.update { it.copy(busy = t.hash) }
+            runCatching { block(t) }.onFailure { e -> toast(e.short()) }
+            _state.update { it.copy(busy = null, selected = if (close) null else it.selected) }
             refresh()
         }
     }

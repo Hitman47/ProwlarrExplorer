@@ -1,6 +1,7 @@
 package dev.mkdev.prowlarrexplorer.ui
 
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -8,20 +9,25 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -42,9 +48,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,27 +65,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import dev.mkdev.prowlarrexplorer.domain.CategoryFilter
+import dev.mkdev.prowlarrexplorer.domain.ParsedTitle
 import dev.mkdev.prowlarrexplorer.domain.Release
+import dev.mkdev.prowlarrexplorer.domain.ReleaseTitle
+import dev.mkdev.prowlarrexplorer.domain.SortMode
+import dev.mkdev.prowlarrexplorer.domain.Tag
+import dev.mkdev.prowlarrexplorer.domain.TagKind
 import dev.mkdev.prowlarrexplorer.domain.humanAge
 import dev.mkdev.prowlarrexplorer.domain.humanSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(vm: SearchViewModel, state: UiState, onSettings: () -> Unit) {
+fun SearchScreen(
+    vm: SearchViewModel,
+    state: UiState,
+    twoPane: Boolean,
+    onSettings: () -> Unit,
+    onShowDownloads: () -> Unit,
+) {
     val snackbar = remember { SnackbarHostState() }
     val focus = LocalFocusManager.current
     var showIndexers by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.message) {
-        state.message?.let { snackbar.showSnackbar(it); vm.consumeMessage() }
+        val m = state.message ?: return@LaunchedEffect
+        val r = snackbar.showSnackbar(m.text, actionLabel = if (m.goDownloads) "Voir" else null)
+        if (r == SnackbarResult.ActionPerformed) onShowDownloads()
+        vm.consumeMessage()
     }
 
     Scaffold(
@@ -87,57 +115,93 @@ fun SearchScreen(vm: SearchViewModel, state: UiState, onSettings: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = vm::setQuery,
-                placeholder = { Text("Titre, année, saison…") },
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (state.query.isNotEmpty()) IconButton(onClick = { vm.setQuery("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Effacer")
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focus.clearFocus(); vm.search() }),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                CategoryFilter.entries.forEach { c ->
-                    FilterChip(selected = state.category == c, onClick = { vm.setCategory(c) }, label = { Text(c.label) })
-                }
-                AssistChip(
-                    onClick = { showIndexers = true },
-                    label = { Text("Indexers : ${state.indexerLabel}") },
-                    leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
+        Row(Modifier.padding(padding).fillMaxSize()) {
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = vm::setQuery,
+                    placeholder = { Text("Titre, année, saison…") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (state.query.isNotEmpty()) IconButton(onClick = { vm.setQuery("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Effacer")
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focus.clearFocus(); vm.search() }),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
+
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AssistChip(
+                        onClick = { showIndexers = true },
+                        label = { Text(state.indexerLabel) },
+                        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
+                    )
+                    CategoryFilter.entries.forEach { c ->
+                        FilterChip(selected = state.category == c, onClick = { vm.setCategory(c) }, label = { Text(c.label) })
+                    }
+                }
+
+                if (state.searched) Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Tri", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SortMode.entries.forEach { s ->
+                        FilterChip(selected = state.sort == s, onClick = { vm.setSort(s) }, label = { Text(s.label) })
+                    }
+                    FilterChip(selected = state.hideDead, onClick = vm::toggleHideDead, label = { Text("Masquer 0 seed") })
+                }
+
+                if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+                else Spacer(Modifier.height(8.dp))
+
+                when {
+                    state.error != null -> Message(state.error)
+                    !state.searched -> HistoryPanel(state, onPick = { vm.searchFor(it) }, onClear = vm::clearHistory)
+                    state.results.isEmpty() && !state.loading -> Message(
+                        if (state.hiddenCount > 0) "Aucun résultat avec seeders (${state.hiddenCount} masqués)." else "Aucun résultat.",
+                    )
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        item {
+                            Text(
+                                "${state.results.size} résultats" + if (state.hiddenCount > 0) " · ${state.hiddenCount} masqués" else "",
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            )
+                        }
+                        items(state.results, key = { "${it.indexerId}:${it.guid}" }) { r ->
+                            SwipeToGrab(onGrab = { vm.grab(r) }) {
+                                ReleaseRow(r, selected = twoPane && state.selected?.guid == r.guid, onClick = { vm.select(r) })
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
             }
 
-            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
-            else Spacer(Modifier.height(12.dp))
-
-            when {
-                state.error != null -> Message(state.error)
-                !state.searched -> Message("Lance une recherche : Prowlarr interroge ${state.enabledIndexers.size} indexer(s).")
-                state.results.isEmpty() && !state.loading -> Message("Aucun résultat.")
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(state.results, key = { "${it.indexerId}:${it.guid}" }) { r ->
-                        ReleaseRow(r, onClick = { vm.select(r) })
-                        HorizontalDivider()
-                    }
+            if (twoPane) {
+                VerticalDivider()
+                Box(Modifier.width(400.dp).fillMaxHeight()) {
+                    val sel = state.selected
+                    if (sel == null) Message("Sélectionne un résultat.")
+                    else ReleaseDetail(sel, grabbing = state.grabbing == sel.guid, onGrab = { vm.grab(sel) })
                 }
             }
         }
     }
 
     if (showIndexers) IndexerDialog(vm, state, onDismiss = { showIndexers = false })
-    state.selected?.let { r ->
-        ReleaseSheet(r, grabbing = state.grabbing, onGrab = vm::grab, onDismiss = { vm.select(null) })
+    if (!twoPane) state.selected?.let { r ->
+        ModalBottomSheet(onDismissRequest = { vm.select(null) }) {
+            ReleaseDetail(r, grabbing = state.grabbing == r.guid, onGrab = { vm.grab(r) })
+        }
     }
 }
 
@@ -148,18 +212,103 @@ private fun Message(text: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ReleaseRow(r: Release, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(4.dp))
+private fun HistoryPanel(state: UiState, onPick: (String) -> Unit, onClear: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        if (state.history.isEmpty()) {
+            Text(
+                "Lance une recherche : Prowlarr interroge ${state.enabledIndexers.size} indexer(s). " +
+                    "Astuce : sélectionne un titre dans n'importe quelle app → « Prowlarr Explorer ».",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            return
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text("Récentes", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onClear) { Text("Effacer") }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.history.forEach { q -> SuggestionChip(onClick = { onPick(q) }, label = { Text(q) }) }
+        }
+    }
+}
+
+/** Glisser vers la droite = envoyer, sans ouvrir la fiche ; la ligne revient en place. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToGrab(onGrab: () -> Unit, content: @Composable () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val dismiss = rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            if (v == SwipeToDismissBoxValue.StartToEnd) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onGrab()
+            }
+            false
+        },
+    )
+    SwipeToDismissBox(
+        state = dismiss,
+        enableDismissFromEndToStart = false,
+        backgroundContent = {
+            Row(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Download, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                Spacer(Modifier.width(8.dp))
+                Text("Envoyer", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
+            }
+        },
+    ) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) { content() }
+    }
+}
+
+@Composable
+private fun ReleaseRow(r: Release, selected: Boolean, onClick: () -> Unit) {
+    val parsed = remember(r.guid) { ReleaseTitle.parse(r.title) }
+    Column(
+        Modifier.fillMaxWidth()
+            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.surfaceVariant) else Modifier)
+            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(parsed.heading, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (parsed.tags.isNotEmpty()) TagRow(parsed.tags)
+        Text(r.title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(r.size.humanSize(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
             SeedLeech(r)
             Text(r.humanAge(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
             Text(r.indexer, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(110.dp))
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagRow(tags: List<Tag>) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        tags.forEach { t ->
+            val (bg, fg) = when (t.kind) {
+                TagKind.RES -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                TagKind.HDR -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+                TagKind.LANG -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+                else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Text(
+                t.label, style = MaterialTheme.typography.labelSmall, color = fg,
+                modifier = Modifier.background(bg, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            )
         }
     }
 }
@@ -211,42 +360,50 @@ private fun IndexerDialog(vm: SearchViewModel, state: UiState, onDismiss: () -> 
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Fiche d'une release : en bottom sheet (téléphone) ou volet droit (tablette paysage). */
 @Composable
-private fun ReleaseSheet(r: Release, grabbing: Boolean, onGrab: () -> Unit, onDismiss: () -> Unit) {
+fun ReleaseDetail(r: Release, grabbing: Boolean, onGrab: () -> Unit) {
     val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val parsed: ParsedTitle = remember(r.guid) { ReleaseTitle.parse(r.title) }
     fun open(url: String) = runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(r.title, style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(r.size.humanSize(), fontWeight = FontWeight.SemiBold)
-                SeedLeech(r)
-                Text(r.humanAge())
-                r.grabs?.let { Text("$it grabs", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-            Text(
-                listOf(r.indexer, r.categories.joinToString { it.name }.ifBlank { null }).filterNotNull().joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 8.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(parsed.heading, style = MaterialTheme.typography.titleLarge)
+        if (parsed.tags.isNotEmpty()) TagRow(parsed.tags)
+        Text(r.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(r.size.humanSize(), fontWeight = FontWeight.SemiBold)
+            SeedLeech(r)
+            Text(r.humanAge())
+            r.grabs?.let { Text("$it grabs", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        Text(
+            listOf(r.indexer, r.categories.joinToString { it.name }.ifBlank { null }).filterNotNull().joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
-            Button(onClick = onGrab, enabled = !grabbing, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (grabbing) "Envoi…" else "Envoyer au client de téléchargement")
+        Button(
+            onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onGrab() },
+            enabled = !grabbing, modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Download, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (grabbing) "Envoi…" else "Envoyer au client de téléchargement")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            r.infoUrl?.let { u ->
+                OutlinedButton(onClick = { open(u) }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.OpenInNew, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Page indexer")
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                r.infoUrl?.let { u ->
-                    OutlinedButton(onClick = { open(u) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Page indexer")
-                    }
-                }
-                r.magnetUrl?.let { u ->
-                    OutlinedButton(onClick = { open(u) }, modifier = Modifier.weight(1f)) { Text("Magnet") }
-                }
+            r.magnetUrl?.let { u ->
+                OutlinedButton(onClick = { open(u) }, modifier = Modifier.weight(1f)) { Text("Magnet") }
             }
         }
     }
