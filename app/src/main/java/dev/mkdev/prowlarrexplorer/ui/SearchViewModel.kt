@@ -4,12 +4,15 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.mkdev.prowlarrexplorer.data.ProwlarrClient
+import dev.mkdev.prowlarrexplorer.data.QbitClient
 import dev.mkdev.prowlarrexplorer.data.SettingsStore
 import dev.mkdev.prowlarrexplorer.data.short
 import dev.mkdev.prowlarrexplorer.domain.AppSettings
 import dev.mkdev.prowlarrexplorer.domain.CategoryFilter
 import dev.mkdev.prowlarrexplorer.domain.Indexer
 import dev.mkdev.prowlarrexplorer.domain.ProwlarrConfig
+import dev.mkdev.prowlarrexplorer.domain.QbitCategory
+import dev.mkdev.prowlarrexplorer.domain.QbitConfig
 import dev.mkdev.prowlarrexplorer.domain.Release
 import dev.mkdev.prowlarrexplorer.domain.SortMode
 import dev.mkdev.prowlarrexplorer.domain.ThemeMode
@@ -27,6 +30,11 @@ data class Msg(val text: String, val goDownloads: Boolean = false)
 
 data class UiState(
     val config: ProwlarrConfig? = null,
+    val qbit: QbitConfig? = null,
+    /** Catégories qBittorrent (vide si non configuré / injoignable). */
+    val categories: List<QbitCategory> = emptyList(),
+    /** Catégorie qBittorrent pour le prochain envoi ; vide = aucune. */
+    val qbCategory: String = "",
     val indexers: List<Indexer> = emptyList(),
     /** Ids des indexers cochés ; null = tous les indexers activés. */
     val selectedIndexers: Set<Int>? = null,
@@ -45,6 +53,8 @@ data class UiState(
     val message: Msg? = null,
 ) {
     val enabledIndexers: List<Indexer> get() = indexers.filter { it.enable }
+    /** Envoi direct à qBittorrent possible pour cette release (sinon grab Prowlarr). */
+    fun direct(r: Release): Boolean = qbit?.configured == true && r.protocol != "usenet" && (r.magnetUrl != null || r.downloadUrl != null)
     val indexerLabel: String
         get() = when (val s = selectedIndexers) {
             null -> "Tous (${enabledIndexers.size})"
@@ -67,6 +77,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SettingsStore(app)
     private val client = ProwlarrClient { _state.value.config ?: ProwlarrConfig() }
+    private val qbit = QbitClient { _state.value.qbit ?: QbitConfig() }
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
@@ -79,11 +90,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             store.settings.collect { s ->
                 val first = _state.value.config == null
-                _state.update { it.copy(config = s.prowlarr) }
+                val qbitChanged = _state.value.qbit != s.qbit
+                _state.update { it.copy(config = s.prowlarr, qbit = s.qbit) }
                 if (first && s.prowlarr.configured) loadIndexers()
+                if (qbitChanged) loadCategories()
             }
         }
         viewModelScope.launch { store.history.collect { h -> _state.update { it.copy(history = h) } } }
+        viewModelScope.launch { store.qbCategory.collect { c -> _state.update { it.copy(qbCategory = c) } } }
     }
 
     fun loadIndexers() {
@@ -93,6 +107,17 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 .onFailure { e -> _state.update { it.copy(error = "Indexers : ${e.short()}") } }
         }
     }
+
+    fun loadCategories() {
+        val cfg = _state.value.qbit ?: return
+        if (!cfg.configured) { _state.update { it.copy(categories = emptyList()) }; return }
+        viewModelScope.launch {
+            val list = runCatching { qbit.categories() }.getOrDefault(emptyList())
+            _state.update { it.copy(categories = list) }
+        }
+    }
+
+    fun setQbCategory(name: String) = viewModelScope.launch { store.setQbCategory(name) }
 
     fun setQuery(q: String) = _state.update { it.copy(query = q) }
     fun setSort(s: SortMode) = _state.update { it.copy(sort = s) }
@@ -141,17 +166,34 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun select(r: Release?) = _state.update { it.copy(selected = r) }
 
+    /**
+     * Un seul bouton : qBittorrent en direct (avec catégorie) quand il est configuré et que la release
+     * est un torrent ; sinon grab Prowlarr (usenet, ou qBittorrent non configuré).
+     */
     fun grab(r: Release? = _state.value.selected) {
         r ?: return
-        if (_state.value.grabbing != null) return
+        val s = _state.value
+        if (s.grabbing != null) return
         viewModelScope.launch {
             _state.update { it.copy(grabbing = r.guid) }
-            runCatching { client.grab(r) }
+            runCatching { if (s.direct(r)) sendToQbit(r, s.qbCategory) else client.grab(r) }
                 .onSuccess {
+                    val where = if (s.direct(r)) "qBittorrent" + (s.qbCategory.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") else "Prowlarr"
                     _state.update { it.copy(grabbing = null, selected = if (it.selected?.guid == r.guid) null else it.selected) }
-                    _state.update { it.copy(message = Msg("Envoyé : ${r.title.take(50)}", goDownloads = true)) }
+                    _state.update { it.copy(message = Msg("Envoyé à $where : ${r.title.take(40)}", goDownloads = s.direct(r))) }
                 }
                 .onFailure { e -> _state.update { it.copy(grabbing = null) }; toast("Envoi : ${e.short()}") }
+        }
+    }
+
+    private suspend fun sendToQbit(r: Release, category: String) {
+        val magnet = r.magnetUrl
+        if (magnet != null) { qbit.addUrl(magnet, category); return }
+        // Le .torrent passe par Prowlarr (joignable depuis l'app), puis est poussé en multipart :
+        // qBittorrent n'a pas besoin de joindre Prowlarr lui-même.
+        when (val src = client.fetchTorrent(r.downloadUrl!!, r.title)) {
+            is ProwlarrClient.TorrentSource.Magnet -> qbit.addUrl(src.url, category)
+            is ProwlarrClient.TorrentSource.File -> qbit.addTorrentFile(src.bytes, src.name, category)
         }
     }
 

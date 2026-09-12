@@ -32,6 +32,13 @@ envoi d'une release vers le client de téléchargement configuré dans Prowlarr.
   secrets, assistant au premier lancement, thème Clair / Sombre / Système.
 - Tablette en paysage : rail de navigation + fiche dans un volet droit.
 
+## v0.4
+
+- qBittorrent : clé API (≥ 5.2) en priorité, sinon login/mot de passe, sinon bypass IP.
+- Envoi direct à qBittorrent (magnet, ou .torrent récupéré via Prowlarr puis poussé en
+  multipart) avec choix de la catégorie, mémorisée pour les envois suivants ; repli sur le
+  grab Prowlarr pour l'usenet ou sans qBittorrent. Un seul bouton.
+
 ## Build
 
 ```bash

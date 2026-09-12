@@ -1,12 +1,18 @@
 package dev.mkdev.prowlarrexplorer.data
 
+import dev.mkdev.prowlarrexplorer.domain.QbitCategory
 import dev.mkdev.prowlarrexplorer.domain.QbitConfig
 import dev.mkdev.prowlarrexplorer.domain.Torrent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.cookies.HttpCookies
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -19,6 +25,8 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 class QbitError(message: String) : Exception(message)
@@ -113,6 +121,43 @@ class QbitClient(private val config: () -> QbitConfig) {
             }
         }
         return json.decodeFromString(ListSerializer(Torrent.serializer()), text)
+    }
+
+    suspend fun categories(): List<QbitCategory> {
+        val cfg = config()
+        val text = call(cfg) { http.get("${cfg.url}/api/v2/torrents/categories") { auth(cfg) } }
+        return json.decodeFromString(MapSerializer(String.serializer(), QbitCategory.serializer()), text)
+            .values.sortedBy { it.name.lowercase() }
+    }
+
+    /** Ajout par lien (magnet ou URL http) ; catégorie vide = aucune. */
+    suspend fun addUrl(url: String, category: String) {
+        val cfg = config()
+        val body = call(cfg) {
+            http.submitForm(
+                "${cfg.url}/api/v2/torrents/add",
+                Parameters.build { append("urls", url); if (category.isNotBlank()) append("category", category) },
+            ) { auth(cfg) }
+        }
+        if (body.startsWith("Fails")) throw QbitError("qBittorrent a refusé le lien")
+    }
+
+    /** Ajout d'un fichier .torrent (multipart). */
+    suspend fun addTorrentFile(bytes: ByteArray, fileName: String, category: String) {
+        val cfg = config()
+        val body = call(cfg) {
+            http.submitFormWithBinaryData(
+                "${cfg.url}/api/v2/torrents/add",
+                formData {
+                    append("torrents", bytes, Headers.build {
+                        append(HttpHeaders.ContentType, "application/x-bittorrent")
+                        append(HttpHeaders.ContentDisposition, "filename=\"${fileName.replace("\"", "")}\"")
+                    })
+                    if (category.isNotBlank()) append("category", category)
+                },
+            ) { auth(cfg) }
+        }
+        if (body.startsWith("Fails")) throw QbitError("qBittorrent a refusé le fichier .torrent")
     }
 
     suspend fun pause(hash: String) {

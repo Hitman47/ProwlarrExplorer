@@ -31,6 +31,7 @@ class SettingsStore(private val context: Context) {
     private val updateCheckKey = longPreferencesKey("update_last_check")
     private val historyKey = stringPreferencesKey("history")
     private val themeKey = stringPreferencesKey("theme")
+    private val qbCategoryKey = stringPreferencesKey("qb_category")
     private val listJson = ListSerializer(String.serializer())
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -84,6 +85,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun clearHistory() {
         context.dataStore.edit { it.remove(historyKey) }
+    }
+
+    /** Catégorie qBittorrent choisie au dernier envoi ; vide = aucune. */
+    val qbCategory: Flow<String> = context.dataStore.data.map { it[qbCategoryKey] ?: "" }
+
+    suspend fun setQbCategory(name: String) {
+        context.dataStore.edit { it[qbCategoryKey] = name }
     }
 
     val theme: Flow<ThemeMode> = context.dataStore.data.map { p ->

@@ -7,6 +7,7 @@ import dev.mkdev.prowlarrexplorer.domain.ProwlarrConfig
 import dev.mkdev.prowlarrexplorer.domain.Release
 import dev.mkdev.prowlarrexplorer.domain.SystemStatus
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
@@ -92,6 +93,39 @@ class ProwlarrClient(private val config: () -> ProwlarrConfig) {
             setBody(json.encodeToString(GrabRequest.serializer(), GrabRequest(release.guid, release.indexerId)))
         }
         r.okBody()
+    }
+
+    /** Client sans suivi de redirection : Prowlarr peut renvoyer un 302 vers un lien magnet. */
+    private val raw = HttpClient(OkHttp) {
+        followRedirects = false
+        install(HttpTimeout) { connectTimeoutMillis = 5_000; requestTimeoutMillis = 60_000 }
+        expectSuccess = false
+    }
+
+    sealed class TorrentSource {
+        data class File(val bytes: ByteArray, val name: String) : TorrentSource()
+        data class Magnet(val url: String) : TorrentSource()
+    }
+
+    /** Récupère le .torrent derrière `downloadUrl` (via Prowlarr), ou le magnet vers lequel il redirige. */
+    suspend fun fetchTorrent(downloadUrl: String, name: String): TorrentSource {
+        val cfg = config()
+        var url = downloadUrl
+        repeat(4) {
+            val r = raw.get(url) { auth(cfg) }
+            val loc = r.headers["Location"]
+            when {
+                r.status.value in 300..399 && loc != null ->
+                    if (loc.startsWith("magnet:")) return TorrentSource.Magnet(loc) else url = loc
+                r.status.isSuccess() -> {
+                    val bytes = r.body<ByteArray>()
+                    if (bytes.isEmpty() || bytes[0] != 'd'.code.toByte()) throw ProwlarrError("Réponse inattendue (pas un .torrent)")
+                    return TorrentSource.File(bytes, "$name.torrent")
+                }
+                else -> throw ProwlarrError("Téléchargement du .torrent : HTTP ${r.status.value}")
+            }
+        }
+        throw ProwlarrError("Trop de redirections")
     }
 
     private suspend fun HttpResponse.okBody(): String {

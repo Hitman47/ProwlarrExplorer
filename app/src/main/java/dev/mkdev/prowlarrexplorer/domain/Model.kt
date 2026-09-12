@@ -67,6 +67,10 @@ data class Release(
 @Serializable
 data class GrabRequest(val guid: String, val indexerId: Int)
 
+/** Entrée de GET /api/v2/torrents/categories (objet indexé par nom). */
+@Serializable
+data class QbitCategory(val name: String, val savePath: String = "")
+
 @Serializable
 data class SystemStatus(val appName: String = "Prowlarr", val version: String = "", val instanceName: String = "")
 

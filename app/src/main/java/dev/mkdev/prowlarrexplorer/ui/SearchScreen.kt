@@ -35,6 +35,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -76,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import dev.mkdev.prowlarrexplorer.domain.CategoryFilter
 import dev.mkdev.prowlarrexplorer.domain.ParsedTitle
+import dev.mkdev.prowlarrexplorer.domain.QbitCategory
 import dev.mkdev.prowlarrexplorer.domain.Release
 import dev.mkdev.prowlarrexplorer.domain.ReleaseTitle
 import dev.mkdev.prowlarrexplorer.domain.SortMode
@@ -191,7 +196,7 @@ fun SearchScreen(
                 Box(Modifier.width(400.dp).fillMaxHeight()) {
                     val sel = state.selected
                     if (sel == null) Message("Sélectionne un résultat.")
-                    else ReleaseDetail(sel, grabbing = state.grabbing == sel.guid, onGrab = { vm.grab(sel) })
+                    else ReleaseDetail(sel, state, vm)
                 }
             }
         }
@@ -200,7 +205,33 @@ fun SearchScreen(
     if (showIndexers) IndexerDialog(vm, state, onDismiss = { showIndexers = false })
     if (!twoPane) state.selected?.let { r ->
         ModalBottomSheet(onDismissRequest = { vm.select(null) }) {
-            ReleaseDetail(r, grabbing = state.grabbing == r.guid, onGrab = { vm.grab(r) })
+            ReleaseDetail(r, state, vm)
+        }
+    }
+}
+
+/** Catégorie qBittorrent (mémorisée pour les envois suivants, y compris par glissement). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryPicker(categories: List<QbitCategory>, current: String, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+        OutlinedTextField(
+            value = current.ifBlank { "Aucune" },
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Catégorie qBittorrent") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("Aucune") }, onClick = { onPick(""); open = false })
+            categories.forEach { c ->
+                DropdownMenuItem(
+                    text = { Text(c.name) },
+                    onClick = { onPick(c.name); open = false },
+                )
+            }
         }
     }
 }
@@ -362,10 +393,12 @@ private fun IndexerDialog(vm: SearchViewModel, state: UiState, onDismiss: () -> 
 
 /** Fiche d'une release : en bottom sheet (téléphone) ou volet droit (tablette paysage). */
 @Composable
-fun ReleaseDetail(r: Release, grabbing: Boolean, onGrab: () -> Unit) {
+fun ReleaseDetail(r: Release, state: UiState, vm: SearchViewModel) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val parsed: ParsedTitle = remember(r.guid) { ReleaseTitle.parse(r.title) }
+    val grabbing = state.grabbing == r.guid
+    val direct = state.direct(r)
     fun open(url: String) = runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
 
     Column(
@@ -386,13 +419,21 @@ fun ReleaseDetail(r: Release, grabbing: Boolean, onGrab: () -> Unit) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        if (direct) CategoryPicker(state.categories, state.qbCategory, onPick = vm::setQbCategory)
+
         Button(
-            onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onGrab() },
+            onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); vm.grab(r) },
             enabled = !grabbing, modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(Icons.Default.Download, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text(if (grabbing) "Envoi…" else "Envoyer au client de téléchargement")
+            Text(
+                when {
+                    grabbing -> "Envoi…"
+                    direct -> "Envoyer à qBittorrent"
+                    else -> "Envoyer via Prowlarr"
+                },
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             r.infoUrl?.let { u ->
