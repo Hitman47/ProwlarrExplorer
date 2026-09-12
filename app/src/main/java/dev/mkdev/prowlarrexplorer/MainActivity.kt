@@ -31,11 +31,14 @@ import dev.mkdev.prowlarrexplorer.ui.DownloadsViewModel
 import dev.mkdev.prowlarrexplorer.ui.SearchScreen
 import dev.mkdev.prowlarrexplorer.ui.SearchViewModel
 import dev.mkdev.prowlarrexplorer.ui.SettingsScreen
+import dev.mkdev.prowlarrexplorer.ui.UpdateBanner
+import dev.mkdev.prowlarrexplorer.ui.UpdateViewModel
 
 class MainActivity : ComponentActivity() {
 
     private val searchVm: SearchViewModel by viewModels()
     private val downloadsVm: DownloadsViewModel by viewModels()
+    private val updateVm: UpdateViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +47,7 @@ class MainActivity : ComponentActivity() {
             AppTheme {
                 val search by searchVm.state.collectAsState()
                 val downloads by downloadsVm.state.collectAsState()
+                val update by updateVm.state.collectAsState()
                 var showSettings by remember { mutableStateOf(false) }
                 var tab by rememberSaveable { mutableStateOf(0) }
                 val prowlarr = search.config
@@ -57,9 +61,10 @@ class MainActivity : ComponentActivity() {
                 if (showSettings && prowlarr != null && qbit != null) {
                     BackHandler { showSettings = false }
                     SettingsScreen(
-                        initial = AppSettings(prowlarr, qbit),
+                        initial = AppSettings(prowlarr, qbit, search.githubToken),
                         onTestProwlarr = searchVm::testConfig,
                         onTestQbit = downloadsVm::testConfig,
+                        onCheckUpdate = { token -> updateVm.check(tokenOverride = token) },
                         onSave = searchVm::saveSettings,
                         onBack = { showSettings = false },
                     )
@@ -71,6 +76,8 @@ class MainActivity : ComponentActivity() {
                                 else -> DownloadsScreen(vm = downloadsVm, state = downloads, onSettings = { showSettings = true })
                             }
                         }
+                        // Sous le contenu : pas de conflit avec l'inset de la barre d'état.
+                        UpdateBanner(update, onInstall = updateVm::downloadAndInstall, onDismiss = updateVm::dismiss)
                         NavigationBar {
                             NavigationBarItem(
                                 selected = tab == 0, onClick = { tab = 0 },

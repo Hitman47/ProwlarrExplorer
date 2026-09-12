@@ -98,7 +98,36 @@ data class QbitConfig(val url: String = "", val username: String = "", val passw
     }
 }
 
-data class AppSettings(val prowlarr: ProwlarrConfig = ProwlarrConfig(), val qbit: QbitConfig = QbitConfig())
+data class AppSettings(
+    val prowlarr: ProwlarrConfig = ProwlarrConfig(),
+    val qbit: QbitConfig = QbitConfig(),
+    /** Token GitHub (contents:read) : nécessaire tant que le dépôt des releases est privé. */
+    val githubToken: String = "",
+)
+
+/** Décomposition d'une URL de service pour la saisie : schéma / hôte / port. */
+data class UrlParts(val https: Boolean = false, val host: String = "", val port: String = "") {
+    fun toUrl(): String = when {
+        host.isBlank() -> ""
+        else -> "${if (https) "https" else "http"}://${host.trim()}${port.trim().takeIf { it.isNotEmpty() }?.let { ":$it" } ?: ""}"
+    }
+
+    companion object {
+        fun parse(url: String, defaultPort: Int): UrlParts {
+            if (url.isBlank()) return UrlParts(port = defaultPort.toString())
+            val u = runCatching { java.net.URI(if (url.contains("://")) url else "http://$url") }.getOrNull()
+                ?: return UrlParts(host = url)
+            return UrlParts(
+                https = u.scheme == "https",
+                host = u.host ?: url,
+                port = if (u.port > 0) u.port.toString() else "",
+            )
+        }
+    }
+}
+
+/** Release GitHub candidate à l'installation. */
+data class UpdateInfo(val tag: String, val version: String, val assetId: Long, val assetName: String, val size: Long, val pageUrl: String)
 
 /** Élément de GET /api/v2/torrents/info — champs utiles à la liste. */
 @Serializable

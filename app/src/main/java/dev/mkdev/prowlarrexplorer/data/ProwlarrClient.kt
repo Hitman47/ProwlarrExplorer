@@ -116,7 +116,7 @@ class ProwlarrClient(private val config: () -> ProwlarrConfig) {
 }
 
 fun Throwable.short(): String = when (this) {
-    is ProwlarrError, is QbitError -> message ?: "erreur"
+    is ProwlarrError, is QbitError, is UpdateError -> message ?: "erreur"
     is java.net.ConnectException, is java.net.UnknownHostException -> "serveur injoignable"
     is java.net.SocketTimeoutException, is io.ktor.client.plugins.HttpRequestTimeoutException -> "délai dépassé"
     else -> message?.take(120) ?: javaClass.simpleName

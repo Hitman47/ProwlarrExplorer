@@ -12,6 +12,15 @@ envoi d'une release vers le client de téléchargement configuré dans Prowlarr.
 - Envoi : `POST /api/v1/search {guid, indexerId}` — Prowlarr pousse vers son
   client de téléchargement (qBittorrent, SAB…). Aucune config qBittorrent côté app.
 
+## v0.2
+
+- Réglages : schéma http/https + IP + port pour chaque service.
+- qBittorrent : login/mot de passe ou bypass IP ; onglet Téléchargements (progression,
+  vitesse, ETA, pause / reprise / suppression), compatible 4.x et 5.x.
+- Mise à jour dans l'app : vérification des releases GitHub (au plus une fois par 6 h
+  ou via Réglages), téléchargement de l'APK et ouverture de l'installeur. Tant que le
+  dépôt est privé, un token GitHub fine-grained (Contents : Read) est requis.
+
 ## Build
 
 ```bash
