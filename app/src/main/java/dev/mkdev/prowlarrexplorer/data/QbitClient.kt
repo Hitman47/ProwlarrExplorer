@@ -130,13 +130,17 @@ class QbitClient(private val config: () -> QbitConfig) {
             .values.sortedBy { it.name.lowercase() }
     }
 
-    /** Ajout par lien (magnet ou URL http) ; catégorie vide = aucune. */
-    suspend fun addUrl(url: String, category: String) {
+    /** Ajout par lien (magnet ou URL http) ; `cookie` = session à présenter au tracker pour une URL de .torrent. */
+    suspend fun addUrl(url: String, category: String, cookie: String? = null) {
         val cfg = config()
         val body = call(cfg) {
             http.submitForm(
                 "${cfg.url}/api/v2/torrents/add",
-                Parameters.build { append("urls", url); if (category.isNotBlank()) append("category", category) },
+                Parameters.build {
+                    append("urls", url)
+                    if (category.isNotBlank()) append("category", category)
+                    if (!cookie.isNullOrBlank()) append("cookie", cookie)
+                },
             ) { auth(cfg) }
         }
         if (body.startsWith("Fails")) throw QbitError("qBittorrent a refusé le lien")

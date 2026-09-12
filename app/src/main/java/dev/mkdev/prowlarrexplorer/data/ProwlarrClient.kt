@@ -67,6 +67,20 @@ class ProwlarrClient(private val config: () -> ProwlarrConfig) {
         return json.decodeFromString(ListSerializer(Indexer.serializer()), r.okBody())
     }
 
+    /**
+     * Cookie de session stocké dans Prowlarr pour cet indexer (définitions à connexion par cookie),
+     * null si l'indexer se connecte autrement ou si le champ est masqué.
+     */
+    suspend fun indexerCookie(indexerId: Int): String? {
+        val cfg = config()
+        val r = http.get("${cfg.url}/api/v1/indexer/$indexerId") { auth(cfg) }
+        val fields = json.parseToJsonElement(r.okBody()).jsonObject["fields"]?.jsonArray ?: return null
+        return fields.map { it.jsonObject }
+            .firstOrNull { it["name"]?.jsonPrimitive?.content?.endsWith("cookie", ignoreCase = true) == true }
+            ?.get("value")?.let { v -> runCatching { v.jsonPrimitive.content }.getOrNull() }
+            ?.takeIf { it.isNotBlank() && !it.startsWith("****") }
+    }
+
     /** Recherche multi-indexers ; Prowlarr interroge chaque indexer, d'où le délai long. */
     suspend fun search(query: String, categories: List<Int>, indexerIds: List<Int>, limit: Int = 100): List<Release> {
         val cfg = config()

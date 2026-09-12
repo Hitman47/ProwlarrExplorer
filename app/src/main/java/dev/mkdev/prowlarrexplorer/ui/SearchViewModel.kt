@@ -50,6 +50,8 @@ data class UiState(
     val selected: Release? = null,
     /** guid de la release en cours d'envoi. */
     val grabbing: String? = null,
+    /** Page ouverte dans le navigateur intégré. */
+    val web: WebTarget? = null,
     val message: Msg? = null,
 ) {
     val enabledIndexers: List<Indexer> get() = indexers.filter { it.enable }
@@ -165,6 +167,31 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     fun clearHistory() = viewModelScope.launch { store.clearHistory() }
 
     fun select(r: Release?) = _state.update { it.copy(selected = r) }
+
+    /** Page de la release chez l'indexer, avec le cookie de session Prowlarr si l'indexer en a un. */
+    fun openInfo(r: Release) {
+        val url = r.infoUrl ?: return
+        viewModelScope.launch {
+            val cookie = kotlinx.coroutines.withTimeoutOrNull(4_000) { runCatching { client.indexerCookie(r.indexerId) }.getOrNull() }
+            _state.update { it.copy(web = WebTarget(url, r.indexer.ifBlank { "Indexer" }, cookie)) }
+        }
+    }
+
+    fun closeWeb() = _state.update { it.copy(web = null) }
+
+    /** Lien magnet / .torrent cliqué dans le navigateur intégré → qBittorrent (sinon navigateur externe). */
+    fun addFromWeb(url: String, cookie: String?) {
+        val s = _state.value
+        if (s.qbit?.configured != true) {
+            toast("qBittorrent non configuré : lien ignoré")
+            return
+        }
+        viewModelScope.launch {
+            runCatching { qbit.addUrl(url, s.qbCategory, cookie) }
+                .onSuccess { _state.update { it.copy(message = Msg("Envoyé à qBittorrent", goDownloads = true)) } }
+                .onFailure { e -> toast("Envoi : ${e.short()}") }
+        }
+    }
 
     /**
      * Un seul bouton : qBittorrent en direct (avec catégorie) quand il est configuré et que la release

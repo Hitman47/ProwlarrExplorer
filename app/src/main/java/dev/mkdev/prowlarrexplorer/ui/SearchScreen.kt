@@ -436,8 +436,8 @@ fun ReleaseDetail(r: Release, state: UiState, vm: SearchViewModel) {
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            r.infoUrl?.let { u ->
-                OutlinedButton(onClick = { open(u) }, modifier = Modifier.weight(1f)) {
+            if (r.infoUrl != null) {
+                OutlinedButton(onClick = { vm.openInfo(r) }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.OpenInNew, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text("Page indexer")

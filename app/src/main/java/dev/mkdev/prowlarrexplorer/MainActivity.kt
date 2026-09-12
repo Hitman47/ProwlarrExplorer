@@ -54,6 +54,7 @@ import dev.mkdev.prowlarrexplorer.ui.SettingsHome
 import dev.mkdev.prowlarrexplorer.ui.SettingsPage
 import dev.mkdev.prowlarrexplorer.ui.UpdateBanner
 import dev.mkdev.prowlarrexplorer.ui.UpdateViewModel
+import dev.mkdev.prowlarrexplorer.ui.WebScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -152,7 +153,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val web = search.web
         when {
+            web != null -> WebScreen(web, search, searchVm, onClose = searchVm::closeWeb, onShowDownloads = { tab = 1 })
             // Assistant : la carte de mise à jour reste accessible même sans configuration.
             onboardingStep == 1 -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f)) {
