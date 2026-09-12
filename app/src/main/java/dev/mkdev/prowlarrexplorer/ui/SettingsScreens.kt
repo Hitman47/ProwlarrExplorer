@@ -36,6 +36,10 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import android.net.Uri
+import dev.mkdev.prowlarrexplorer.data.BackupCodec
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Build
@@ -110,9 +114,21 @@ fun SettingsHome(
     onInstallUpdate: () -> Unit,
     notifyDone: Boolean,
     onNotifyDone: (Boolean) -> Unit,
+    onExport: suspend (Uri, String) -> Result<String>,
+    onImport: suspend (Uri, String) -> Result<String>,
     onBack: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var backupResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    // Phrase demandée après le choix du fichier ; (uri, export?) en attente.
+    var pending by remember { mutableStateOf<Pair<Uri, Boolean>?>(null) }
+    val createDoc = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        uri?.let { pending = it to true }
+    }
+    val openDoc = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { pending = it to false }
+    }
     val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         onNotifyDone(granted)
     }
@@ -150,6 +166,18 @@ fun SettingsHome(
         }
 
         HorizontalDivider()
+        Text("Sauvegarde des réglages", style = MaterialTheme.typography.titleMedium)
+        Hint("Fichier .${BackupCodec.EXTENSION} chiffré par une phrase secrète (AES-256, PBKDF2). Contient URLs, clés, login, thème, notifications, catégorie.")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { createDoc.launch("prowlarr-explorer-reglages.${BackupCodec.EXTENSION}") }, modifier = Modifier.weight(1f)) { Text("Exporter…") }
+            OutlinedButton(onClick = { openDoc.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) { Text("Importer…") }
+        }
+        backupResult?.let { (ok, text) ->
+            Text(text, style = MaterialTheme.typography.bodyMedium,
+                color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+        }
+
+        HorizontalDivider()
         Text("Mises à jour", style = MaterialTheme.typography.titleMedium)
         Text("Version installée : ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
         Hint("Releases GitHub Hitman47/ProwlarrExplorer, vérifiées à chaque ouverture. Mise à jour en place : réglages conservés.")
@@ -157,6 +185,42 @@ fun SettingsHome(
         // Même carte que sur l'écran principal : Installer / progression, ici sans « Plus tard ».
         UpdateBanner(update.copy(dismissed = false), onInstall = onInstallUpdate, onDismiss = null)
     }
+
+    pending?.let { (uri, export) ->
+        PassphraseDialog(
+            export = export,
+            onDismiss = { pending = null },
+            onConfirm = { pass ->
+                pending = null
+                scope.launch {
+                    val r = if (export) onExport(uri, pass) else onImport(uri, pass)
+                    backupResult = r.fold({ true to it }, { false to it.short() })
+                }
+            },
+        )
+    }
+}
+
+/** Phrase secrète de la sauvegarde ; à l'export, saisie deux fois. */
+@Composable
+private fun PassphraseDialog(export: Boolean, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var p1 by remember { mutableStateOf("") }
+    var p2 by remember { mutableStateOf("") }
+    val ok = p1.length >= 6 && (!export || p1 == p2)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (export) "Phrase secrète de la sauvegarde" else "Phrase secrète du fichier") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecretField(p1, onChange = { p1 = it }, label = "Phrase (6 caractères min.)", paste = !export)
+                if (export) SecretField(p2, onChange = { p2 = it }, label = "Confirmer", paste = false)
+                if (export) Hint("Sans cette phrase, le fichier est inutilisable. Elle n'est stockée nulle part.")
+                else Hint("Tous les réglages actuels seront remplacés.")
+            }
+        },
+        confirmButton = { TextButton(enabled = ok, onClick = { onConfirm(p1) }) { Text(if (export) "Exporter" else "Restaurer") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }
 
 @Composable

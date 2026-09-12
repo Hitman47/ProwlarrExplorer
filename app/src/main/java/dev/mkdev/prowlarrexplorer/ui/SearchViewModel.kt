@@ -3,6 +3,9 @@ package dev.mkdev.prowlarrexplorer.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
+import dev.mkdev.prowlarrexplorer.data.BackupCodec
+import dev.mkdev.prowlarrexplorer.data.BackupPayload
 import dev.mkdev.prowlarrexplorer.data.JournalStore
 import dev.mkdev.prowlarrexplorer.data.ProwlarrClient
 import dev.mkdev.prowlarrexplorer.data.QbitClient
@@ -299,6 +302,34 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val tail = if (clients.isEmpty()) "aucun client de téléchargement activé dans Prowlarr"
         else "clients : ${clients.joinToString { it.name }}"
         "${st.appName} ${st.version} — $tail"
+    }
+
+    /** Écrit la sauvegarde chiffrée dans le document choisi (SAF). */
+    suspend fun exportSettings(uri: Uri, passphrase: String): Result<String> = runCatching {
+        val s = store.settings.first()
+        val payload = BackupPayload(
+            prowlarrUrl = s.prowlarr.url, prowlarrApiKey = s.prowlarr.apiKey,
+            qbitUrl = s.qbit.url, qbitApiKey = s.qbit.apiKey, qbitUser = s.qbit.username, qbitPassword = s.qbit.password,
+            theme = store.theme.first().name, notifyDone = store.notifyDone.first(), qbCategory = store.qbCategory.first(),
+        )
+        val bytes = BackupCodec.encrypt(payload, passphrase)
+        val app = getApplication<Application>()
+        app.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } ?: throw IllegalStateException("Impossible d'écrire le fichier")
+        "Réglages sauvegardés (${bytes.size} octets, chiffrés)"
+    }
+
+    /** Lit une sauvegarde et remplace tous les réglages. */
+    suspend fun importSettings(uri: Uri, passphrase: String): Result<String> = runCatching {
+        val app = getApplication<Application>()
+        val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Impossible de lire le fichier")
+        val p = BackupCodec.decrypt(bytes, passphrase)
+        store.save(p.settings())
+        store.setTheme(p.themeMode())
+        store.setNotifyDone(p.notifyDone)
+        store.setQbCategory(p.qbCategory)
+        _state.update { it.copy(indexers = emptyList(), selectedIndexers = null, rawResults = emptyList(), searched = false) }
+        loadIndexers()
+        "Réglages restaurés : ${p.prowlarrUrl}" + if (p.qbitUrl.isNotBlank()) " · ${p.qbitUrl}" else ""
     }
 
     fun consumeMessage() = _state.update { it.copy(message = null) }

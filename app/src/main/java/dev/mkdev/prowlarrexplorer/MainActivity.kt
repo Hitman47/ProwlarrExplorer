@@ -249,6 +249,8 @@ class MainActivity : ComponentActivity() {
                     onInstallUpdate = updateVm::downloadAndInstall,
                     notifyDone = notifyDone,
                     onNotifyDone = downloadsVm::setNotifyDone,
+                    onExport = searchVm::exportSettings,
+                    onImport = searchVm::importSettings,
                     onBack = { settingsPage = null },
                 )
             }
