@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import dev.mkdev.prowlarrexplorer.data.ProwlarrClient
 import dev.mkdev.prowlarrexplorer.data.SettingsStore
 import dev.mkdev.prowlarrexplorer.data.short
+import dev.mkdev.prowlarrexplorer.domain.AppSettings
 import dev.mkdev.prowlarrexplorer.domain.CategoryFilter
 import dev.mkdev.prowlarrexplorer.domain.Indexer
 import dev.mkdev.prowlarrexplorer.domain.ProwlarrConfig
@@ -51,10 +52,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            store.config.collect { c ->
+            store.settings.collect { s ->
                 val first = _state.value.config == null
-                _state.update { it.copy(config = c) }
-                if (first && c.configured) loadIndexers()
+                _state.update { it.copy(config = s.prowlarr) }
+                if (first && s.prowlarr.configured) loadIndexers()
             }
         }
     }
@@ -117,10 +118,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveConfig(c: ProwlarrConfig) {
+    fun saveSettings(s: AppSettings) {
         viewModelScope.launch {
-            store.save(c)
-            _state.update { it.copy(config = store.config.first(), indexers = emptyList(), selectedIndexers = null, results = emptyList(), searched = false) }
+            store.save(s)
+            _state.update { it.copy(config = store.settings.first().prowlarr, indexers = emptyList(), selectedIndexers = null, results = emptyList(), searched = false) }
             loadIndexers()
         }
     }

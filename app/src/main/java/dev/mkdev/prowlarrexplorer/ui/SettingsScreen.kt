@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -32,25 +33,28 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.mkdev.prowlarrexplorer.data.short
+import dev.mkdev.prowlarrexplorer.domain.AppSettings
 import dev.mkdev.prowlarrexplorer.domain.ProwlarrConfig
+import dev.mkdev.prowlarrexplorer.domain.QbitConfig
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    initial: ProwlarrConfig,
-    onTest: suspend (ProwlarrConfig) -> Result<String>,
-    onSave: (ProwlarrConfig) -> Unit,
+    initial: AppSettings,
+    onTestProwlarr: suspend (ProwlarrConfig) -> Result<String>,
+    onTestQbit: suspend (QbitConfig) -> Result<String>,
+    onSave: (AppSettings) -> Unit,
     onBack: () -> Unit,
 ) {
-    var url by remember { mutableStateOf(initial.url) }
-    var apiKey by remember { mutableStateOf(initial.apiKey) }
-    var testResult by remember { mutableStateOf<String?>(null) }
-    var testOk by remember { mutableStateOf(false) }
-    var testing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var url by remember { mutableStateOf(initial.prowlarr.url) }
+    var apiKey by remember { mutableStateOf(initial.prowlarr.apiKey) }
+    var qbUrl by remember { mutableStateOf(initial.qbit.url) }
+    var qbUser by remember { mutableStateOf(initial.qbit.username) }
+    var qbPass by remember { mutableStateOf(initial.qbit.password) }
 
-    fun current() = ProwlarrConfig(url, apiKey)
+    fun prowlarr() = ProwlarrConfig(url, apiKey)
+    fun qbit() = QbitConfig(qbUrl, qbUser, qbPass)
 
     Scaffold(
         topBar = {
@@ -66,8 +70,9 @@ fun SettingsScreen(
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Text("Prowlarr", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
-                value = url, onValueChange = { url = it; testResult = null },
+                value = url, onValueChange = { url = it },
                 label = { Text("URL Prowlarr") },
                 placeholder = { Text("http://100.x.y.z:9696") },
                 singleLine = true,
@@ -75,46 +80,74 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
-                value = apiKey, onValueChange = { apiKey = it; testResult = null },
+                value = apiKey, onValueChange = { apiKey = it },
                 label = { Text("Clé API") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
-                "Prowlarr → Settings → General → Security → API Key. La clé est chiffrée dans le Keystore du téléphone. " +
-                    "L'envoi utilise le client de téléchargement déclaré dans Prowlarr (Settings → Download Clients).",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Hint("Prowlarr → Settings → General → Security → API Key. Chiffrée dans le Keystore du téléphone.")
+            TestButton(enabled = prowlarr().configured, test = { onTestProwlarr(prowlarr()) })
+
+            HorizontalDivider()
+
+            Text("qBittorrent", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = qbUrl, onValueChange = { qbUrl = it },
+                label = { Text("URL WebUI qBittorrent") },
+                placeholder = { Text("http://100.x.y.z:8080") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
             )
-
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    enabled = current().configured && !testing,
-                    onClick = {
-                        testing = true
-                        scope.launch {
-                            onTest(current())
-                                .onSuccess { testResult = it; testOk = true }
-                                .onFailure { testResult = it.short(); testOk = false }
-                            testing = false
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Text(if (testing) "Test…" else "Tester") }
-                Button(
-                    enabled = current().configured,
-                    onClick = { onSave(current()); onBack() },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Enregistrer") }
+                OutlinedTextField(value = qbUser, onValueChange = { qbUser = it },
+                    label = { Text("Login") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = qbPass, onValueChange = { qbPass = it },
+                    label = { Text("Mot de passe") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.weight(1f))
             }
+            Hint(
+                "qBittorrent n'a pas de clé API. Login/mot de passe vides = « Bypass authentication for clients in " +
+                    "whitelisted IP subnets » activé dans qBittorrent (Options → WebUI) avec le sous-réseau Tailscale 100.64.0.0/10.",
+            )
+            TestButton(enabled = qbit().configured, test = { onTestQbit(qbit()) })
 
-            testResult?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (testOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                )
-            }
+            Button(
+                enabled = prowlarr().configured,
+                onClick = { onSave(AppSettings(prowlarr(), qbit())); onBack() },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Enregistrer") }
         }
+    }
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun TestButton(enabled: Boolean, test: suspend () -> Result<String>) {
+    var result by remember { mutableStateOf<String?>(null) }
+    var ok by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    OutlinedButton(
+        enabled = enabled && !testing,
+        onClick = {
+            testing = true
+            scope.launch {
+                test().onSuccess { result = it; ok = true }.onFailure { result = it.short(); ok = false }
+                testing = false
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text(if (testing) "Test…" else "Tester") }
+
+    result?.let {
+        Text(it, style = MaterialTheme.typography.bodyMedium,
+            color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
     }
 }

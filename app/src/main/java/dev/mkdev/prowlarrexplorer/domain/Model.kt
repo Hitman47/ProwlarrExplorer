@@ -82,3 +82,73 @@ fun Release.humanAge(): String = when {
     age < 730 -> "${age / 30} mois"
     else -> "${age / 365} ans"
 }
+
+/**
+ * Connexion à qBittorrent (WebUI API v2). Pas de clé API dans qBittorrent : soit login/mot de passe,
+ * soit identifiants vides = « Bypass authentication for whitelisted IP subnets » activé côté qBittorrent.
+ */
+data class QbitConfig(val url: String = "", val username: String = "", val password: String = "") {
+    val configured: Boolean get() = url.isNotBlank()
+    val hasCredentials: Boolean get() = username.isNotBlank()
+
+    fun normalized(): QbitConfig {
+        var u = url.trim().trimEnd('/')
+        if (u.isNotEmpty() && !u.contains("://")) u = "http://$u"
+        return copy(url = u, username = username.trim(), password = password)
+    }
+}
+
+data class AppSettings(val prowlarr: ProwlarrConfig = ProwlarrConfig(), val qbit: QbitConfig = QbitConfig())
+
+/** Élément de GET /api/v2/torrents/info — champs utiles à la liste. */
+@Serializable
+data class Torrent(
+    val hash: String,
+    val name: String,
+    val size: Long = 0,
+    val progress: Double = 0.0,
+    val dlspeed: Long = 0,
+    val upspeed: Long = 0,
+    /** Secondes ; 8640000 = inconnu. */
+    val eta: Long = 8640000,
+    val state: String = "",
+    val category: String = "",
+    @kotlinx.serialization.SerialName("added_on") val addedOn: Long = 0,
+    @kotlinx.serialization.SerialName("num_seeds") val numSeeds: Int = 0,
+    @kotlinx.serialization.SerialName("num_leechs") val numLeechs: Int = 0,
+    @kotlinx.serialization.SerialName("save_path") val savePath: String = "",
+) {
+    val done: Boolean get() = progress >= 0.9999
+    val paused: Boolean get() = state in PAUSED_STATES
+    val error: Boolean get() = state == "error" || state == "missingFiles"
+
+    val stateLabel: String
+        get() = when (state) {
+            "downloading", "forcedDL" -> "Téléchargement"
+            "metaDL", "forcedMetaDL" -> "Métadonnées"
+            "stalledDL" -> "En attente de pairs"
+            "queuedDL" -> "En file"
+            "pausedDL", "stoppedDL" -> "En pause"
+            "uploading", "forcedUP", "stalledUP" -> "Terminé · seed"
+            "pausedUP", "stoppedUP", "queuedUP" -> "Terminé"
+            "checkingDL", "checkingUP", "checkingResumeData" -> "Vérification"
+            "moving" -> "Déplacement"
+            "error" -> "Erreur"
+            "missingFiles" -> "Fichiers manquants"
+            else -> state
+        }
+
+    companion object {
+        val PAUSED_STATES = setOf("pausedDL", "stoppedDL", "pausedUP", "stoppedUP")
+    }
+}
+
+fun Long.humanSpeed(): String = if (this <= 0) "" else "${humanSize()}/s"
+
+fun Long.humanEta(): String = when {
+    this <= 0 || this >= 8640000 -> ""
+    this < 60 -> "${this} s"
+    this < 3600 -> "${this / 60} min"
+    this < 86400 -> String.format(java.util.Locale.FRANCE, "%d h %02d", this / 3600, (this % 3600) / 60)
+    else -> "${this / 86400} j"
+}
