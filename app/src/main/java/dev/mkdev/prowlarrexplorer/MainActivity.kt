@@ -55,6 +55,7 @@ import dev.mkdev.prowlarrexplorer.ui.SettingsPage
 import dev.mkdev.prowlarrexplorer.ui.UpdateBanner
 import dev.mkdev.prowlarrexplorer.ui.UpdateViewModel
 import dev.mkdev.prowlarrexplorer.ui.WebScreen
+import dev.mkdev.prowlarrexplorer.work.DownloadWatcher
 
 class MainActivity : ComponentActivity() {
 
@@ -64,6 +65,10 @@ class MainActivity : ComponentActivity() {
 
     /** Texte reçu (sélection ou partage) en attente de recherche. */
     private val pendingQuery = mutableStateOf<String?>(null)
+    /** Onglet demandé par une notification. */
+    private val pendingTab = mutableStateOf<Int?>(null)
+    /** Lien magnet / .torrent reçu, à proposer à l'ajout. */
+    private val pendingLink = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,12 +86,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        if (intent?.hasExtra(DownloadWatcher.EXTRA_TAB) == true) {
+            pendingTab.value = intent.getIntExtra(DownloadWatcher.EXTRA_TAB, 0)
+            intent.removeExtra(DownloadWatcher.EXTRA_TAB)
+        }
         val text = when (intent?.action) {
             Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_VIEW -> intent.dataString
             else -> null
         }?.trim()?.takeIf { it.isNotEmpty() } ?: return
-        pendingQuery.value = text
+        // Un lien magnet / .torrent partagé ouvre le dialogue d'ajout ; tout autre texte lance une recherche.
+        if (SearchViewModel.isTorrentLink(text)) pendingLink.value = text else pendingQuery.value = text
     }
 
     @Composable
@@ -95,6 +106,7 @@ class MainActivity : ComponentActivity() {
         val downloads by downloadsVm.state.collectAsState()
         val update by updateVm.state.collectAsState()
         val theme by searchVm.theme.collectAsState()
+        val notifyDone by downloadsVm.notifyDone.collectAsState()
         var settingsPage by remember { mutableStateOf<SettingsPage?>(null) }
         // 0 = pas encore décidé, 1 = Prowlarr, 2 = qBittorrent, 3 = terminé.
         var onboardingStep by rememberSaveable { mutableStateOf(0) }
@@ -111,6 +123,25 @@ class MainActivity : ComponentActivity() {
             val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) updateVm.checkIfDue() }
             owner.lifecycle.addObserver(obs)
             onDispose { owner.lifecycle.removeObserver(obs) }
+        }
+
+        val wantedTab by pendingTab
+        LaunchedEffect(wantedTab) {
+            val t = wantedTab ?: return@LaunchedEffect
+            pendingTab.value = null
+            settingsPage = null
+            searchVm.closeWeb()
+            tab = t
+        }
+
+        val link by pendingLink
+        LaunchedEffect(link) {
+            val l = link ?: return@LaunchedEffect
+            pendingLink.value = null
+            settingsPage = null
+            searchVm.closeWeb()
+            tab = 0
+            searchVm.openManualAdd(l)
         }
 
         // Texte reçu d'une autre app : recherche immédiate.
@@ -203,6 +234,8 @@ class MainActivity : ComponentActivity() {
                     update = update,
                     onCheckUpdate = { updateVm.check() },
                     onInstallUpdate = updateVm::downloadAndInstall,
+                    notifyDone = notifyDone,
+                    onNotifyDone = downloadsVm::setNotifyDone,
                     onBack = { settingsPage = null },
                 )
             }

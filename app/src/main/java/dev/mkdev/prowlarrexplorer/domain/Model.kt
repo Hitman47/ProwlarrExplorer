@@ -61,7 +61,13 @@ data class Release(
     val categories: List<Category> = emptyList(),
     val grabs: Int? = null,
     val publishDate: String = "",
-)
+    val infoHash: String? = null,
+) {
+    /** Clé de regroupement : même torrent (infoHash) ou, à défaut, même nom + même taille. */
+    val dedupKey: String
+        get() = infoHash?.takeIf { it.isNotBlank() }?.lowercase()
+            ?: (title.lowercase().replace(Regex("[^a-z0-9]"), "") + "|" + size)
+}
 
 /** Corps de POST /api/v1/search : Prowlarr pousse la release vers son client de téléchargement. */
 @Serializable

@@ -35,6 +35,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.os.Build
+import androidx.compose.ui.platform.LocalContext
+import dev.mkdev.prowlarrexplorer.work.DownloadWatcher
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -102,11 +108,35 @@ fun SettingsHome(
     update: UpdateState,
     onCheckUpdate: suspend () -> Result<String>,
     onInstallUpdate: () -> Unit,
+    notifyDone: Boolean,
+    onNotifyDone: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
+    val ctx = LocalContext.current
+    val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        onNotifyDone(granted)
+    }
     SettingsScaffold("Réglages", onBack) {
         ServiceRow("Prowlarr", prowlarr.url.ifBlank { "Non configuré" }, if (prowlarr.configured) prowlarrProbe else null) { onOpen(SettingsPage.PROWLARR) }
         ServiceRow("qBittorrent", qbit.url.ifBlank { "Non configuré (optionnel)" }, if (qbit.configured) qbitProbe else null) { onOpen(SettingsPage.QBIT) }
+
+        HorizontalDivider()
+        Text("Notifications", style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Téléchargement terminé", style = MaterialTheme.typography.bodyLarge)
+                Hint("Vérification en arrière-plan toutes les 15 min ; nécessite qBittorrent.")
+            }
+            Switch(
+                checked = notifyDone && qbit.configured && DownloadWatcher.canNotify(ctx),
+                enabled = qbit.configured,
+                onCheckedChange = { on ->
+                    if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !DownloadWatcher.canNotify(ctx)) {
+                        askPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    } else onNotifyDone(on)
+                },
+            )
+        }
 
         HorizontalDivider()
         Text("Apparence", style = MaterialTheme.typography.titleMedium)

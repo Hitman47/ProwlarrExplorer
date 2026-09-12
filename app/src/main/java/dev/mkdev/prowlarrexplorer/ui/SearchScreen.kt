@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FilterList
@@ -114,6 +115,9 @@ fun SearchScreen(
             TopAppBar(
                 title = { Text("Prowlarr Explorer") },
                 actions = {
+                    if (state.qbit?.configured == true) IconButton(onClick = { vm.openManualAdd() }) {
+                        Icon(Icons.Default.AddLink, contentDescription = "Ajouter un lien")
+                    }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = "Réglages") }
                 },
             )
@@ -176,14 +180,16 @@ fun SearchScreen(
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         item {
                             Text(
-                                "${state.results.size} résultats" + if (state.hiddenCount > 0) " · ${state.hiddenCount} masqués" else "",
+                                "${state.results.size} résultats" +
+                                    (if (state.mergedCount > 0) " · ${state.mergedCount} doublons regroupés" else "") +
+                                    (if (state.hiddenCount > 0) " · ${state.hiddenCount} masqués" else ""),
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                             )
                         }
                         items(state.results, key = { "${it.indexerId}:${it.guid}" }) { r ->
                             SwipeToGrab(onGrab = { vm.grab(r) }) {
-                                ReleaseRow(r, selected = twoPane && state.selected?.guid == r.guid, onClick = { vm.select(r) })
+                                ReleaseRow(r, others = state.alternates(r).size, selected = twoPane && state.selected?.guid == r.guid, onClick = { vm.select(r) })
                             }
                             HorizontalDivider()
                         }
@@ -203,11 +209,47 @@ fun SearchScreen(
     }
 
     if (showIndexers) IndexerDialog(vm, state, onDismiss = { showIndexers = false })
+    state.manualAdd?.let { prefill -> ManualAddDialog(prefill, state, vm) }
     if (!twoPane) state.selected?.let { r ->
         ModalBottomSheet(onDismissRequest = { vm.select(null) }) {
             ReleaseDetail(r, state, vm)
         }
     }
+}
+
+/** Ajout manuel : magnet ou URL de .torrent (saisi, collé, ou reçu par partage) + catégorie. */
+@Composable
+private fun ManualAddDialog(prefill: String, state: UiState, vm: SearchViewModel) {
+    var link by remember(prefill) { mutableStateOf(prefill) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val valid = SearchViewModel.isTorrentLink(link)
+    AlertDialog(
+        onDismissRequest = { if (!state.adding) vm.closeManualAdd() },
+        title = { Text("Ajouter à qBittorrent") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = link, onValueChange = { link = it },
+                    label = { Text("Lien magnet ou .torrent") },
+                    placeholder = { Text("magnet:?xt=urn:btih:…") },
+                    maxLines = 4,
+                    trailingIcon = {
+                        IconButton(onClick = { clipboard.getText()?.text?.trim()?.let { link = it } }) {
+                            Icon(Icons.Default.AddLink, contentDescription = "Coller")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                CategoryPicker(state.categories, state.qbCategory, onPick = vm::setQbCategory)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid && !state.adding, onClick = { vm.addManual(link) }) {
+                Text(if (state.adding) "Envoi…" else "Envoyer")
+            }
+        },
+        dismissButton = { TextButton(enabled = !state.adding, onClick = vm::closeManualAdd) { Text("Annuler") } },
+    )
 }
 
 /** Catégorie qBittorrent (mémorisée pour les envois suivants, y compris par glissement). */
@@ -302,7 +344,7 @@ private fun SwipeToGrab(onGrab: () -> Unit, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ReleaseRow(r: Release, selected: Boolean, onClick: () -> Unit) {
+private fun ReleaseRow(r: Release, others: Int, selected: Boolean, onClick: () -> Unit) {
     val parsed = remember(r.guid) { ReleaseTitle.parse(r.title) }
     Column(
         Modifier.fillMaxWidth()
@@ -319,8 +361,11 @@ private fun ReleaseRow(r: Release, selected: Boolean, onClick: () -> Unit) {
             SeedLeech(r)
             Text(r.humanAge(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
-            Text(r.indexer, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                r.indexer + if (others > 0) " +$others" else "",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -418,6 +463,20 @@ fun ReleaseDetail(r: Release, state: UiState, vm: SearchViewModel) {
             listOf(r.indexer, r.categories.joinToString { it.name }.ifBlank { null }).filterNotNull().joinToString(" · "),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        val others = state.alternates(r)
+        if (others.isNotEmpty()) {
+            Text("Aussi sur :", style = MaterialTheme.typography.labelMedium)
+            others.forEach { o ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { vm.select(o) }.padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(o.indexer, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    SeedLeech(o)
+                    Text(o.humanAge(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
 
         if (direct) CategoryPicker(state.categories, state.qbCategory, onPick = vm::setQbCategory)
 

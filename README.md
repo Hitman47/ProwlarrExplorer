@@ -39,6 +39,16 @@ envoi d'une release vers le client de téléchargement configuré dans Prowlarr.
   multipart) avec choix de la catégorie, mémorisée pour les envois suivants ; repli sur le
   grab Prowlarr pour l'usenet ou sans qBittorrent. Un seul bouton.
 
+## v0.5
+
+- Notification « téléchargement terminé » (WorkManager, 15 min, désactivable dans Réglages).
+- Ajout manuel : bouton « + » (coller un magnet / lien .torrent), partage ou « Ouvrir avec »
+  d'un lien magnet vers l'app → qBittorrent avec catégorie.
+- Résultats identiques sur plusieurs indexers regroupés (« indexer +2 », liste « Aussi sur »
+  dans la fiche).
+- Navigateur intégré pour la page indexer : cookies persistants, cookie Prowlarr injecté
+  quand l'indexer en a un, liens magnet / .torrent cliqués envoyés à qBittorrent.
+
 ## Build
 
 ```bash

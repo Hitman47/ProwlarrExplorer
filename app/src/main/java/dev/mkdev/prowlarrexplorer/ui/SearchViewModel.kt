@@ -52,6 +52,9 @@ data class UiState(
     val grabbing: String? = null,
     /** Page ouverte dans le navigateur intégré. */
     val web: WebTarget? = null,
+    /** Dialogue d'ajout manuel : lien pré-rempli (null = fermé). */
+    val manualAdd: String? = null,
+    val adding: Boolean = false,
     val message: Msg? = null,
 ) {
     val enabledIndexers: List<Indexer> get() = indexers.filter { it.enable }
@@ -63,7 +66,7 @@ data class UiState(
             else -> "${s.size} / ${enabledIndexers.size}"
         }
 
-    val results: List<Release>
+    private val sorted: List<Release>
         get() {
             val kept = if (hideDead) rawResults.filter { it.protocol == "usenet" || (it.seeders ?: 0) > 0 } else rawResults
             return when (sort) {
@@ -72,7 +75,13 @@ data class UiState(
                 SortMode.DATE -> kept.sortedBy { it.ageHours }
             }
         }
-    val hiddenCount: Int get() = rawResults.size - results.size
+
+    /** Même release sur plusieurs indexers : regroupée, la mieux classée (selon le tri) en tête. */
+    private val groups: Map<String, List<Release>> get() = sorted.groupBy { it.dedupKey }
+    val results: List<Release> get() = groups.values.map { it.first() }
+    fun alternates(r: Release): List<Release> = groups[r.dedupKey]?.filter { it.guid != r.guid || it.indexerId != r.indexerId } ?: emptyList()
+    val hiddenCount: Int get() = rawResults.size - sorted.size
+    val mergedCount: Int get() = sorted.size - results.size
 }
 
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
@@ -178,6 +187,32 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeWeb() = _state.update { it.copy(web = null) }
+
+    fun openManualAdd(prefill: String = "") = _state.update { it.copy(manualAdd = prefill) }
+    fun closeManualAdd() = _state.update { it.copy(manualAdd = null) }
+
+    /** Lien magnet ou URL de .torrent saisi / partagé → qBittorrent avec la catégorie courante. */
+    fun addManual(link: String) {
+        val s = _state.value
+        val l = link.trim()
+        if (l.isEmpty() || s.adding) return
+        if (s.qbit?.configured != true) { toast("qBittorrent non configuré"); return }
+        if (!isTorrentLink(l)) { toast("Lien non reconnu (magnet: ou http…)"); return }
+        viewModelScope.launch {
+            _state.update { it.copy(adding = true) }
+            runCatching { qbit.addUrl(l, s.qbCategory) }
+                .onSuccess { _state.update { it.copy(adding = false, manualAdd = null, message = Msg("Envoyé à qBittorrent", goDownloads = true)) } }
+                .onFailure { e -> _state.update { it.copy(adding = false) }; toast("Envoi : ${e.short()}") }
+        }
+    }
+
+    companion object {
+        fun isTorrentLink(text: String): Boolean {
+            val t = text.trim()
+            return t.startsWith("magnet:?", ignoreCase = true) ||
+                (t.startsWith("http", ignoreCase = true) && !t.contains(' ') && (t.contains(".torrent", ignoreCase = true) || t.contains("download", ignoreCase = true)))
+        }
+    }
 
     /** Lien magnet / .torrent cliqué dans le navigateur intégré → qBittorrent (sinon navigateur externe). */
     fun addFromWeb(url: String, cookie: String?) {

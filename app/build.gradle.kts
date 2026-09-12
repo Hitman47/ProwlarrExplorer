@@ -22,8 +22,8 @@ android {
         applicationId = "dev.mkdev.prowlarrexplorer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.4.1"
+        versionCode = 11
+        versionName = "0.5.1"
     }
 
     signingConfigs {
@@ -84,6 +84,7 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation("junit:junit:4.13.2")
 }

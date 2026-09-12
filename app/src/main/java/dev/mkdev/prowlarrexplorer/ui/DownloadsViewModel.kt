@@ -3,6 +3,7 @@ package dev.mkdev.prowlarrexplorer.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.mkdev.prowlarrexplorer.data.CompletionTracker
 import dev.mkdev.prowlarrexplorer.data.QbitClient
 import dev.mkdev.prowlarrexplorer.data.SettingsStore
 import dev.mkdev.prowlarrexplorer.data.short
@@ -11,8 +12,12 @@ import dev.mkdev.prowlarrexplorer.domain.Torrent
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import dev.mkdev.prowlarrexplorer.work.DownloadWatcher
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -47,9 +52,18 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     private val store = SettingsStore(app)
     private val client = QbitClient { _state.value.config ?: QbitConfig() }
 
+    private val tracker = CompletionTracker(app)
+
     private val _state = MutableStateFlow(DownloadsState())
     val state: StateFlow<DownloadsState> = _state
     private var poll: Job? = null
+
+    val notifyDone: StateFlow<Boolean> = store.notifyDone.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    fun setNotifyDone(on: Boolean) = viewModelScope.launch {
+        store.setNotifyDone(on)
+        if (on) DownloadWatcher.schedule(getApplication()) else DownloadWatcher.cancel(getApplication())
+    }
 
     init {
         viewModelScope.launch {
@@ -57,6 +71,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
                 val changed = _state.value.config != s.qbit
                 _state.update { it.copy(config = s.qbit) }
                 if (changed) _state.update { it.copy(torrents = emptyList(), loaded = false, error = null) }
+                if (s.qbit.configured && store.notifyDone.first()) DownloadWatcher.schedule(getApplication())
             }
         }
     }
@@ -86,6 +101,10 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
                         // La fiche ouverte suit la progression.
                         selected = s.selected?.let { sel -> list.firstOrNull { it.hash == sel.hash } },
                     )
+                }
+                // Vu à l'écran : enregistré comme connu, pas de notification en arrière-plan ensuite.
+                tracker.record(list).takeIf { it.isNotEmpty() }?.let { done ->
+                    toast(if (done.size == 1) "Terminé : ${done.first().name.take(50)}" else "${done.size} téléchargements terminés")
                 }
             }
             .onFailure { e ->

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -32,6 +33,7 @@ class SettingsStore(private val context: Context) {
     private val historyKey = stringPreferencesKey("history")
     private val themeKey = stringPreferencesKey("theme")
     private val qbCategoryKey = stringPreferencesKey("qb_category")
+    private val notifyDoneKey = booleanPreferencesKey("notify_done")
     private val listJson = ListSerializer(String.serializer())
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -92,6 +94,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setQbCategory(name: String) {
         context.dataStore.edit { it[qbCategoryKey] = name }
+    }
+
+    /** Notifier les téléchargements terminés (arrière-plan, 15 min). */
+    val notifyDone: Flow<Boolean> = context.dataStore.data.map { it[notifyDoneKey] ?: true }
+
+    suspend fun setNotifyDone(on: Boolean) {
+        context.dataStore.edit { it[notifyDoneKey] = on }
     }
 
     val theme: Flow<ThemeMode> = context.dataStore.data.map { p ->

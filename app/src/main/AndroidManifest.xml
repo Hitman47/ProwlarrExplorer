@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Mise à jour depuis les releases GitHub : ouverture de l'installeur système. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -30,11 +31,18 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- Partage d'un texte depuis une autre app. -->
+            <!-- Partage d'un texte depuis une autre app (titre à chercher, ou lien magnet / .torrent à envoyer). -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- « Ouvrir avec » sur un lien magnet. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="magnet" />
             </intent-filter>
         </activity>
 
