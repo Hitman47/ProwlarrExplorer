@@ -39,10 +39,9 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Retourne un message pour l'écran de réglages ; en silencieux, n'affiche que la bannière. */
-    suspend fun check(silent: Boolean = false, tokenOverride: String? = null): Result<String> {
+    suspend fun check(silent: Boolean = false): Result<String> {
         _state.update { it.copy(checking = true, error = null) }
-        val token = tokenOverride?.trim() ?: store.settings.first().githubToken
-        val r = runCatching { checker.latest(token) }
+        val r = runCatching { checker.latest() }
         store.markUpdateCheck()
         _state.update { s ->
             s.copy(
@@ -60,8 +59,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
         if (_state.value.progress != null) return
         viewModelScope.launch {
             _state.update { it.copy(progress = 0f, error = null) }
-            val token = store.settings.first().githubToken
-            runCatching { checker.download(info, token) { p -> _state.update { it.copy(progress = p) } } }
+            runCatching { checker.download(info) { p -> _state.update { it.copy(progress = p) } } }
                 .onSuccess { file -> _state.update { it.copy(progress = null) }; checker.install(file) }
                 .onFailure { e -> _state.update { it.copy(progress = null, error = e.short()) } }
         }

@@ -61,10 +61,10 @@ class MainActivity : ComponentActivity() {
                 if (showSettings && prowlarr != null && qbit != null) {
                     BackHandler { showSettings = false }
                     SettingsScreen(
-                        initial = AppSettings(prowlarr, qbit, search.githubToken),
+                        initial = AppSettings(prowlarr, qbit),
                         onTestProwlarr = searchVm::testConfig,
                         onTestQbit = downloadsVm::testConfig,
-                        onCheckUpdate = { token -> updateVm.check(tokenOverride = token) },
+                        onCheckUpdate = { updateVm.check() },
                         onSave = searchVm::saveSettings,
                         onBack = { showSettings = false },
                     )

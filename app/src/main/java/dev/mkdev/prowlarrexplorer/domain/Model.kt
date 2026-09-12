@@ -13,13 +13,20 @@ data class ProwlarrConfig(val url: String = "", val apiKey: String = "") {
     }
 }
 
-/** Catégories Newznab standard ; liste vide = pas de filtre côté Prowlarr. */
+/** Catégories Newznab standard (un parent inclut ses sous-catégories) ; liste vide = pas de filtre. */
 enum class CategoryFilter(val label: String, val ids: List<Int>) {
     ALL("Tout", emptyList()),
     MOVIES("Films", listOf(2000)),
     TV("Séries", listOf(5000)),
+    ANIME("Anime", listOf(5070)),
     MUSIC("Musique", listOf(3000)),
+    AUDIOBOOKS("Audiobooks", listOf(3030)),
     BOOKS("Livres", listOf(7000)),
+    COMICS("BD / Comics", listOf(7030)),
+    GAMES("Jeux", listOf(1000, 4050)),
+    SOFTWARE("Logiciels", listOf(4000)),
+    XXX("XXX", listOf(6000)),
+    OTHER("Autre", listOf(8000)),
 }
 
 @Serializable
@@ -98,12 +105,7 @@ data class QbitConfig(val url: String = "", val username: String = "", val passw
     }
 }
 
-data class AppSettings(
-    val prowlarr: ProwlarrConfig = ProwlarrConfig(),
-    val qbit: QbitConfig = QbitConfig(),
-    /** Token GitHub (contents:read) : nécessaire tant que le dépôt des releases est privé. */
-    val githubToken: String = "",
-)
+data class AppSettings(val prowlarr: ProwlarrConfig = ProwlarrConfig(), val qbit: QbitConfig = QbitConfig())
 
 /** Décomposition d'une URL de service pour la saisie : schéma / hôte / port. */
 data class UrlParts(val https: Boolean = false, val host: String = "", val port: String = "") {

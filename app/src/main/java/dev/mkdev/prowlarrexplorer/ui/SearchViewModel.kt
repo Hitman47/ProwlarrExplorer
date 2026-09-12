@@ -20,7 +20,6 @@ import kotlinx.coroutines.launch
 
 data class UiState(
     val config: ProwlarrConfig? = null,
-    val githubToken: String = "",
     val indexers: List<Indexer> = emptyList(),
     /** Ids des indexers cochés ; null = tous les indexers activés. */
     val selectedIndexers: Set<Int>? = null,
@@ -55,7 +54,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             store.settings.collect { s ->
                 val first = _state.value.config == null
-                _state.update { it.copy(config = s.prowlarr, githubToken = s.githubToken) }
+                _state.update { it.copy(config = s.prowlarr) }
                 if (first && s.prowlarr.configured) loadIndexers()
             }
         }

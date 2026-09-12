@@ -51,7 +51,7 @@ fun SettingsScreen(
     initial: AppSettings,
     onTestProwlarr: suspend (ProwlarrConfig) -> Result<String>,
     onTestQbit: suspend (QbitConfig) -> Result<String>,
-    onCheckUpdate: suspend (githubToken: String) -> Result<String>,
+    onCheckUpdate: suspend () -> Result<String>,
     onSave: (AppSettings) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -60,7 +60,6 @@ fun SettingsScreen(
     var qbUrl by remember { mutableStateOf(UrlParts.parse(initial.qbit.url, 8080)) }
     var qbUser by remember { mutableStateOf(initial.qbit.username) }
     var qbPass by remember { mutableStateOf(initial.qbit.password) }
-    var ghToken by remember { mutableStateOf(initial.githubToken) }
 
     fun prowlarr() = ProwlarrConfig(prUrl.toUrl(), apiKey)
     fun qbit() = QbitConfig(qbUrl.toUrl(), qbUser, qbPass)
@@ -112,19 +111,12 @@ fun SettingsScreen(
 
             Text("Mises à jour", style = MaterialTheme.typography.titleMedium)
             Text("Version installée : ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
-            OutlinedTextField(
-                value = ghToken, onValueChange = { ghToken = it },
-                label = { Text("Token GitHub (dépôt privé)") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Hint("Fine-grained token, dépôt Hitman47/ProwlarrExplorer, permission Contents : Read. Inutile si le dépôt est public.")
-            ActionButton("Vérifier maintenant", enabled = true, action = { onCheckUpdate(ghToken) })
+            Hint("Releases GitHub Hitman47/ProwlarrExplorer. Mise à jour en place : réglages et données conservés.")
+            ActionButton("Vérifier maintenant", enabled = true, action = { onCheckUpdate() })
 
             Button(
                 enabled = prowlarr().configured,
-                onClick = { onSave(AppSettings(prowlarr(), qbit(), ghToken)); onBack() },
+                onClick = { onSave(AppSettings(prowlarr(), qbit())); onBack() },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Enregistrer") }
         }

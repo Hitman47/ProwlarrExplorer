@@ -23,7 +23,6 @@ class SettingsStore(private val context: Context) {
     private val qbUrlKey = stringPreferencesKey("qb_url")
     private val qbUserKey = stringPreferencesKey("qb_user")
     private val qbPassKey = stringPreferencesKey("qb_pass_enc")
-    private val ghTokenKey = stringPreferencesKey("gh_token_enc")
     private val updateCheckKey = longPreferencesKey("update_last_check")
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -37,7 +36,6 @@ class SettingsStore(private val context: Context) {
                 username = p[qbUserKey] ?: "",
                 password = p[qbPassKey]?.let { SecretCrypto.decrypt(it) } ?: "",
             ),
-            githubToken = p[ghTokenKey]?.let { SecretCrypto.decrypt(it) } ?: "",
         )
     }
 
@@ -50,7 +48,6 @@ class SettingsStore(private val context: Context) {
             p[qbUrlKey] = qb.url
             p[qbUserKey] = qb.username
             p[qbPassKey] = SecretCrypto.encrypt(qb.password)
-            p[ghTokenKey] = SecretCrypto.encrypt(s.githubToken.trim())
         }
     }
 

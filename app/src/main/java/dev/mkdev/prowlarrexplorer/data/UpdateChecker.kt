@@ -28,9 +28,9 @@ import java.io.File
 class UpdateError(message: String) : Exception(message)
 
 /**
- * Mise à jour depuis les releases GitHub du dépôt : dernière release → asset .apk → téléchargement
- * dans cache/updates → installeur système. L'APK doit être signé par la même clé que celui installé.
- * OkHttp retire l'en-tête Authorization sur la redirection vers le stockage GitHub (autre hôte).
+ * Mise à jour depuis les releases GitHub du dépôt (public) : dernière release → asset .apk →
+ * téléchargement dans cache/updates → installeur système. Même clé de signature que l'APK installé,
+ * donc mise à jour en place : données et réglages de l'app conservés.
  */
 class UpdateChecker(private val context: Context) {
 
@@ -44,20 +44,18 @@ class UpdateChecker(private val context: Context) {
         expectSuccess = false
     }
 
-    private fun HttpRequestBuilder.github(token: String, accept: String) {
+    private fun HttpRequestBuilder.github(accept: String) {
         header("Accept", accept)
         header("X-GitHub-Api-Version", "2022-11-28")
-        if (token.isNotBlank()) header("Authorization", "Bearer $token")
     }
 
     /** Null si la version installée est déjà la dernière. */
-    suspend fun latest(token: String): UpdateInfo? {
-        val r = http.get("$API/releases/latest") { github(token, "application/vnd.github+json") }
+    suspend fun latest(): UpdateInfo? {
+        val r = http.get("$API/releases/latest") { github("application/vnd.github+json") }
         val text = r.bodyAsText()
         when {
-            r.status == HttpStatusCode.NotFound ->
-                throw UpdateError(if (token.isBlank()) "Aucune release, ou dépôt privé : renseigne un token GitHub" else "Aucune release publiée")
-            r.status == HttpStatusCode.Unauthorized -> throw UpdateError("Token GitHub refusé (401)")
+            r.status == HttpStatusCode.NotFound -> throw UpdateError("Aucune release publiée")
+            r.status == HttpStatusCode.Forbidden -> throw UpdateError("GitHub : limite d'appels atteinte, réessaie plus tard")
             !r.status.isSuccess() -> throw UpdateError("GitHub HTTP ${r.status.value}")
         }
         val rel = json.parseToJsonElement(text).jsonObject
@@ -78,11 +76,11 @@ class UpdateChecker(private val context: Context) {
     }
 
     /** Télécharge l'asset (redirection GitHub → stockage) dans cache/updates ; progression 0..1. */
-    suspend fun download(info: UpdateInfo, token: String, onProgress: (Float) -> Unit): File {
+    suspend fun download(info: UpdateInfo, onProgress: (Float) -> Unit): File {
         val dir = File(context.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
         val file = File(dir, info.assetName)
         http.prepareGet("$API/releases/assets/${info.assetId}") {
-            github(token, "application/octet-stream")
+            github("application/octet-stream")
             timeout { requestTimeoutMillis = 300_000 }
             onDownload { sent, total -> if (total != null && total > 0) onProgress(sent.toFloat() / total) }
         }.execute { r ->
