@@ -99,7 +99,9 @@ fun SettingsHome(
     theme: ThemeMode,
     onTheme: (ThemeMode) -> Unit,
     onOpen: (SettingsPage) -> Unit,
+    update: UpdateState,
     onCheckUpdate: suspend () -> Result<String>,
+    onInstallUpdate: () -> Unit,
     onBack: () -> Unit,
 ) {
     SettingsScaffold("Réglages", onBack) {
@@ -122,6 +124,8 @@ fun SettingsHome(
         Text("Version installée : ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
         Hint("Releases GitHub Hitman47/ProwlarrExplorer, vérifiées à chaque ouverture. Mise à jour en place : réglages conservés.")
         ActionButton("Vérifier maintenant", enabled = true, action = onCheckUpdate)
+        // Même carte que sur l'écran principal : Installer / progression, ici sans « Plus tard ».
+        UpdateBanner(update.copy(dismissed = false), onInstall = onInstallUpdate, onDismiss = null)
     }
 }
 

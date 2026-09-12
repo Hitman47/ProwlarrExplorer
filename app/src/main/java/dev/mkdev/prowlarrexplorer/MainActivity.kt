@@ -146,19 +146,34 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val banner: @Composable () -> Unit = {
+            AnimatedVisibility(update.available != null && !update.dismissed, enter = expandVertically(), exit = shrinkVertically()) {
+                UpdateBanner(update, onInstall = updateVm::downloadAndInstall, onDismiss = updateVm::dismiss)
+            }
+        }
+
         when {
-            onboardingStep == 1 -> ProwlarrSettings(
-                initial = prowlarr, onboarding = true, onTest = searchVm::testConfig,
-                onSave = { searchVm.saveSettings(AppSettings(it, qbit)); onboardingStep = 2 },
-                onBack = { if (prowlarr.configured) onboardingStep = 2 },
-            )
-            onboardingStep == 2 -> {
+            // Assistant : la carte de mise à jour reste accessible même sans configuration.
+            onboardingStep == 1 -> Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f)) {
+                    ProwlarrSettings(
+                        initial = prowlarr, onboarding = true, onTest = searchVm::testConfig,
+                        onSave = { searchVm.saveSettings(AppSettings(it, qbit)); onboardingStep = 2 },
+                        onBack = { if (prowlarr.configured) onboardingStep = 2 },
+                    )
+                }
+                banner()
+            }
+            onboardingStep == 2 -> Column(Modifier.fillMaxSize()) {
                 BackHandler { onboardingStep = 3 }
-                QbitSettings(
-                    initial = qbit, onboarding = true, onTest = downloadsVm::testConfig,
-                    onSave = { searchVm.saveSettings(AppSettings(prowlarr, it)) },
-                    onBack = { onboardingStep = 3 },
-                )
+                Box(Modifier.weight(1f)) {
+                    QbitSettings(
+                        initial = qbit, onboarding = true, onTest = downloadsVm::testConfig,
+                        onSave = { searchVm.saveSettings(AppSettings(prowlarr, it)) },
+                        onBack = { onboardingStep = 3 },
+                    )
+                }
+                banner()
             }
             settingsPage == SettingsPage.PROWLARR -> {
                 BackHandler { settingsPage = SettingsPage.HOME }
@@ -182,7 +197,9 @@ class MainActivity : ComponentActivity() {
                     prowlarr = prowlarr, qbit = qbit, prowlarrProbe = prowlarrProbe, qbitProbe = qbitProbe,
                     theme = theme, onTheme = searchVm::setTheme,
                     onOpen = { settingsPage = it },
+                    update = update,
                     onCheckUpdate = { updateVm.check() },
+                    onInstallUpdate = updateVm::downloadAndInstall,
                     onBack = { settingsPage = null },
                 )
             }
@@ -198,11 +215,6 @@ class MainActivity : ComponentActivity() {
                 val badge: @Composable () -> Unit = {
                     BadgedBox(badge = { if (downloads.activeCount > 0) Badge { Text(downloads.activeCount.toString()) } }) {
                         Icon(Icons.Default.Download, contentDescription = null)
-                    }
-                }
-                val banner: @Composable () -> Unit = {
-                    AnimatedVisibility(update.available != null && !update.dismissed, enter = expandVertically(), exit = shrinkVertically()) {
-                        UpdateBanner(update, onInstall = updateVm::downloadAndInstall, onDismiss = updateVm::dismiss)
                     }
                 }
 

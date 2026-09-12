@@ -20,12 +20,12 @@ import dev.mkdev.prowlarrexplorer.domain.humanSize
 
 /** Carte « nouvelle version » au-dessus du contenu ; disparaît si ignorée ou une fois installée. */
 @Composable
-fun UpdateBanner(state: UpdateState, onInstall: () -> Unit, onDismiss: () -> Unit) {
+fun UpdateBanner(state: UpdateState, onInstall: () -> Unit, onDismiss: (() -> Unit)?) {
     val info = state.available ?: return
     if (state.dismissed) return
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = if (onDismiss != null) 16.dp else 0.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -36,7 +36,7 @@ fun UpdateBanner(state: UpdateState, onInstall: () -> Unit, onDismiss: () -> Uni
                 Text("Téléchargement ${(p * 100).toInt()} %", style = MaterialTheme.typography.bodySmall)
             } ?: Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = onInstall) { Text("Installer") }
-                TextButton(onClick = onDismiss) { Text("Plus tard") }
+                if (onDismiss != null) TextButton(onClick = onDismiss) { Text("Plus tard") }
             }
         }
     }
