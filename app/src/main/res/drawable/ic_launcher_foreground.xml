@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Loupe (recherche) dont le manche pointe vers une fleche de telechargement. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7"
+        android:pathData="M46,32a16,16 0 1 0 0.01,0z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,58l6,-6l12,12l-6,6z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72,64h6v14h6l-9,10l-9,-10h6z" />
+</vector>

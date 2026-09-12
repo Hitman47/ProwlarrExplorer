@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTP en clair autorise : les agents sont joints par Tailscale (chiffre de bout
+  en bout) ou par le LAN domestique, sur des IP que <domain> ne sait pas designer.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
