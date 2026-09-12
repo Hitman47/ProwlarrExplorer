@@ -16,6 +16,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,6 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import dev.mkdev.prowlarrexplorer.domain.AppSettings
 import dev.mkdev.prowlarrexplorer.ui.AppTheme
 import dev.mkdev.prowlarrexplorer.ui.DownloadsScreen
@@ -52,6 +56,14 @@ class MainActivity : ComponentActivity() {
                 var tab by rememberSaveable { mutableStateOf(0) }
                 val prowlarr = search.config
                 val qbit = downloads.config
+
+                // Retour au premier plan : nouvelle release ?
+                val owner = LocalLifecycleOwner.current
+                DisposableEffect(owner) {
+                    val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) updateVm.checkIfDue() }
+                    owner.lifecycle.addObserver(obs)
+                    onDispose { owner.lifecycle.removeObserver(obs) }
+                }
 
                 // Premier lancement : pas de config → réglages directement.
                 LaunchedEffect(prowlarr?.configured) {

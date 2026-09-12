@@ -30,11 +30,12 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(UpdateState())
     val state: StateFlow<UpdateState> = _state
 
-    init {
-        // Vérification silencieuse au plus une fois par 6 h.
+    /** À chaque retour au premier plan ; silencieux, au plus une fois toutes les 5 min. */
+    fun checkIfDue() {
         viewModelScope.launch {
+            if (_state.value.checking || _state.value.progress != null) return@launch
             val last = store.lastUpdateCheck.first()
-            if (System.currentTimeMillis() - last > 6 * 3600_000L) check(silent = true)
+            if (System.currentTimeMillis() - last > 5 * 60_000L) check(silent = true)
         }
     }
 
