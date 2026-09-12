@@ -36,10 +36,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -81,7 +77,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import dev.mkdev.prowlarrexplorer.domain.CategoryFilter
 import dev.mkdev.prowlarrexplorer.domain.ParsedTitle
-import dev.mkdev.prowlarrexplorer.domain.QbitCategory
 import dev.mkdev.prowlarrexplorer.domain.Release
 import dev.mkdev.prowlarrexplorer.domain.ReleaseTitle
 import dev.mkdev.prowlarrexplorer.domain.SortMode
@@ -250,32 +245,6 @@ private fun ManualAddDialog(prefill: String, state: UiState, vm: SearchViewModel
         },
         dismissButton = { TextButton(enabled = !state.adding, onClick = vm::closeManualAdd) { Text("Annuler") } },
     )
-}
-
-/** Catégorie qBittorrent (mémorisée pour les envois suivants, y compris par glissement). */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CategoryPicker(categories: List<QbitCategory>, current: String, onPick: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
-        OutlinedTextField(
-            value = current.ifBlank { "Aucune" },
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Catégorie qBittorrent") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
-            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(text = { Text("Aucune") }, onClick = { onPick(""); open = false })
-            categories.forEach { c ->
-                DropdownMenuItem(
-                    text = { Text(c.name) },
-                    onClick = { onPick(c.name); open = false },
-                )
-            }
-        }
-    }
 }
 
 @Composable

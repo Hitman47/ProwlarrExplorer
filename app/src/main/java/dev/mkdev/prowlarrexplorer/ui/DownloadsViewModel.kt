@@ -7,8 +7,10 @@ import dev.mkdev.prowlarrexplorer.data.CompletionTracker
 import dev.mkdev.prowlarrexplorer.data.QbitClient
 import dev.mkdev.prowlarrexplorer.data.SettingsStore
 import dev.mkdev.prowlarrexplorer.data.short
+import dev.mkdev.prowlarrexplorer.domain.QbitCategory
 import dev.mkdev.prowlarrexplorer.domain.QbitConfig
 import dev.mkdev.prowlarrexplorer.domain.Torrent
+import dev.mkdev.prowlarrexplorer.domain.TorrentFile
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +41,10 @@ data class DownloadsState(
     /** hash du torrent sur lequel une action est en cours. */
     val busy: String? = null,
     val message: String? = null,
+    val categories: List<QbitCategory> = emptyList(),
+    /** Fichiers du torrent sélectionné (null = pas chargés). */
+    val files: List<TorrentFile>? = null,
+    val filesFor: String? = null,
 ) {
     val sections: List<Pair<Section, List<Torrent>>>
         get() = Section.entries.mapNotNull { s -> torrents.filter { it.section() == s }.takeIf { it.isNotEmpty() }?.let { s to it } }
@@ -70,7 +76,11 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             store.settings.collect { s ->
                 val changed = _state.value.config != s.qbit
                 _state.update { it.copy(config = s.qbit) }
-                if (changed) _state.update { it.copy(torrents = emptyList(), loaded = false, error = null) }
+                if (changed) _state.update { it.copy(torrents = emptyList(), loaded = false, error = null, categories = emptyList()) }
+                if (changed && s.qbit.configured) launch {
+                    val cats = runCatching { client.categories() }.getOrDefault(emptyList())
+                    _state.update { it.copy(categories = cats) }
+                }
                 if (s.qbit.configured && store.notifyDone.first()) DownloadWatcher.schedule(getApplication())
             }
         }
@@ -115,7 +125,43 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshNow() = viewModelScope.launch { refresh() }
 
-    fun select(t: Torrent?) = _state.update { it.copy(selected = t) }
+    fun select(t: Torrent?) {
+        _state.update { it.copy(selected = t, files = null, filesFor = null) }
+    }
+
+    fun loadFiles() {
+        val t = _state.value.selected ?: return
+        if (_state.value.filesFor == t.hash) return
+        _state.update { it.copy(filesFor = t.hash, files = null) }
+        viewModelScope.launch {
+            runCatching { client.files(t.hash) }
+                .onSuccess { list -> _state.update { if (it.selected?.hash == t.hash) it.copy(files = list) else it } }
+                .onFailure { e -> _state.update { it.copy(filesFor = null) }; toast("Fichiers : ${e.short()}") }
+        }
+    }
+
+    fun toggleFile(f: TorrentFile) {
+        val t = _state.value.selected ?: return
+        val next = if (f.wanted) 0 else 1
+        // Optimiste : la case bascule tout de suite, l'API confirme.
+        _state.update { s -> s.copy(files = s.files?.map { if (it.index == f.index) it.copy(priority = next) else it }) }
+        viewModelScope.launch {
+            runCatching { client.setFilePriority(t.hash, f.index, next) }
+                .onFailure { e -> toast("Fichier : ${e.short()}"); loadFilesForce() }
+        }
+    }
+
+    private fun loadFilesForce() { _state.update { it.copy(filesFor = null) }; loadFiles() }
+
+    fun setCategory(name: String) = action(_state.value.selected) { client.setCategory(it.hash, name) }
+
+    fun recheck() = action(_state.value.selected) { client.recheck(it.hash); toast("Revérification lancée") }
+
+    /** Limites en Ko/s (0 = illimité). */
+    fun setLimits(downKb: Long, upKb: Long) = action(_state.value.selected) {
+        client.setLimits(it.hash, downKb * 1024, upKb * 1024)
+        toast("Limites appliquées")
+    }
 
     fun togglePause(t: Torrent? = _state.value.selected) = action(t) {
         if (it.paused) client.resume(it.hash) else client.pause(it.hash)

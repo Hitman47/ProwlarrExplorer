@@ -19,6 +19,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -142,8 +150,7 @@ fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Bool
                 Box(Modifier.width(400.dp).fillMaxHeight()) {
                     val sel = state.selected
                     if (sel == null) Message("Sélectionne un torrent.")
-                    else TorrentDetail(sel, webUi = state.config?.url, busy = state.busy == sel.hash,
-                        onTogglePause = { vm.togglePause(sel) }, onDelete = vm::delete)
+                    else TorrentDetail(sel, state, vm)
                 }
             }
         }
@@ -151,8 +158,7 @@ fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Bool
 
     if (!twoPane) state.selected?.let { t ->
         ModalBottomSheet(onDismissRequest = { vm.select(null) }) {
-            TorrentDetail(t, webUi = state.config?.url, busy = state.busy == t.hash,
-                onTogglePause = { vm.togglePause(t) }, onDelete = vm::delete)
+            TorrentDetail(t, state, vm)
         }
     }
 }
@@ -234,13 +240,16 @@ private fun TorrentRow(t: Torrent, selected: Boolean, onClick: () -> Unit) {
 
 /** Fiche d'un torrent : bottom sheet (téléphone) ou volet droit (tablette paysage). */
 @Composable
-fun TorrentDetail(t: Torrent, webUi: String?, busy: Boolean, onTogglePause: () -> Unit, onDelete: (Boolean) -> Unit) {
+fun TorrentDetail(t: Torrent, state: DownloadsState, vm: DownloadsViewModel) {
     val ctx = LocalContext.current
+    val busy = state.busy == t.hash
     var confirmDelete by remember { mutableStateOf(false) }
     var withFiles by remember { mutableStateOf(false) }
+    var showLimits by remember { mutableStateOf(false) }
+    var showFiles by remember { mutableStateOf(false) }
 
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 8.dp, bottom = 32.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(top = 8.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(t.name, style = MaterialTheme.typography.titleMedium)
@@ -250,14 +259,18 @@ fun TorrentDetail(t: Torrent, webUi: String?, busy: Boolean, onTogglePause: () -
             Text(t.progressLine())
         }
         Text(
-            listOf(t.stateLabel, "▲ ${t.numSeeds}  ▼ ${t.numLeechs}", t.category.ifBlank { null }).filterNotNull().joinToString(" · "),
+            listOf(t.stateLabel, "▲ ${t.numSeeds}  ▼ ${t.numLeechs}",
+                t.dlLimit.takeIf { it > 0 }?.let { "↓ max ${it.humanSpeed()}" }, t.upLimit.takeIf { it > 0 }?.let { "↑ max ${it.humanSpeed()}" })
+                .filterNotNull().joinToString(" · "),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(t.savePath, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
 
+        CategoryPicker(state.categories, t.category, onPick = { vm.setCategory(it) }, label = "Catégorie", enabled = !busy)
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onTogglePause, enabled = !busy, modifier = Modifier.weight(1f)) {
+            Button(onClick = { vm.togglePause(t) }, enabled = !busy, modifier = Modifier.weight(1f)) {
                 Icon(if (t.paused) Icons.Default.PlayArrow else Icons.Default.Pause, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text(if (t.paused) "Reprendre" else "Pause")
@@ -268,7 +281,29 @@ fun TorrentDetail(t: Torrent, webUi: String?, busy: Boolean, onTogglePause: () -
                 Text("Supprimer")
             }
         }
-        webUi?.let { u ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { showLimits = true }, enabled = !busy, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.Speed, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Limites")
+            }
+            OutlinedButton(onClick = vm::recheck, enabled = !busy, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.Refresh, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Revérifier")
+            }
+        }
+        OutlinedButton(
+            onClick = { showFiles = !showFiles; if (showFiles) vm.loadFiles() },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Folder, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text(if (showFiles) "Masquer les fichiers" else "Fichiers" + (state.files?.let { " (${it.size})" } ?: ""))
+        }
+        if (showFiles) FilesList(state, vm, t)
+
+        state.config?.url?.let { u ->
             OutlinedButton(
                 onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, u.toUri())) } },
                 modifier = Modifier.fillMaxWidth(),
@@ -279,6 +314,8 @@ fun TorrentDetail(t: Torrent, webUi: String?, busy: Boolean, onTogglePause: () -
             }
         }
     }
+
+    if (showLimits) LimitsDialog(t, onApply = { d, u -> vm.setLimits(d, u); showLimits = false }, onDismiss = { showLimits = false })
 
     if (confirmDelete) AlertDialog(
         onDismissRequest = { confirmDelete = false },
@@ -294,10 +331,59 @@ fun TorrentDetail(t: Torrent, webUi: String?, busy: Boolean, onTogglePause: () -
             }
         },
         confirmButton = {
-            TextButton(onClick = { confirmDelete = false; onDelete(withFiles) }) {
+            TextButton(onClick = { confirmDelete = false; vm.delete(withFiles) }) {
                 Text("Supprimer", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+    )
+}
+
+/** Fichiers du torrent : case = téléchargé ou non (priorité 0/1), taille, progression. */
+@Composable
+private fun FilesList(state: DownloadsState, vm: DownloadsViewModel, t: Torrent) {
+    val files = state.files
+    when {
+        state.filesFor != t.hash || files == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
+        files.isEmpty() -> Text("Aucun fichier (métadonnées pas encore reçues).", style = MaterialTheme.typography.bodySmall)
+        else -> Column {
+            files.take(300).forEach { f ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { vm.toggleFile(f) }.padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = f.wanted, onCheckedChange = { vm.toggleFile(f) })
+                    Column(Modifier.weight(1f)) {
+                        Text(f.shortName, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("${f.size.humanSize()} · ${(f.progress * 100).toInt()} %",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            if (files.size > 300) Text("… ${files.size - 300} autres fichiers (WebUI pour le détail).", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+/** Limites de vitesse par torrent, en Ko/s ; 0 ou vide = illimité. */
+@Composable
+private fun LimitsDialog(t: Torrent, onApply: (Long, Long) -> Unit, onDismiss: () -> Unit) {
+    var down by remember { mutableStateOf(if (t.dlLimit > 0) (t.dlLimit / 1024).toString() else "") }
+    var up by remember { mutableStateOf(if (t.upLimit > 0) (t.upLimit / 1024).toString() else "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Limites de vitesse") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = down, onValueChange = { v -> if (v.all { it.isDigit() }) down = v },
+                    label = { Text("↓ Ko/s (vide = illimité)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = up, onValueChange = { v -> if (v.all { it.isDigit() }) up = v },
+                    label = { Text("↑ Ko/s (vide = illimité)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { TextButton(onClick = { onApply(down.toLongOrNull() ?: 0, up.toLongOrNull() ?: 0) }) { Text("Appliquer") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )
 }

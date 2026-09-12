@@ -167,6 +167,9 @@ data class Torrent(
     @kotlinx.serialization.SerialName("num_seeds") val numSeeds: Int = 0,
     @kotlinx.serialization.SerialName("num_leechs") val numLeechs: Int = 0,
     @kotlinx.serialization.SerialName("save_path") val savePath: String = "",
+    /** Limites en octets/s ; 0 = illimité. */
+    @kotlinx.serialization.SerialName("dl_limit") val dlLimit: Long = 0,
+    @kotlinx.serialization.SerialName("up_limit") val upLimit: Long = 0,
 ) {
     val done: Boolean get() = progress >= 0.9999
     val paused: Boolean get() = state in PAUSED_STATES
@@ -191,6 +194,19 @@ data class Torrent(
     companion object {
         val PAUSED_STATES = setOf("pausedDL", "stoppedDL", "pausedUP", "stoppedUP")
     }
+}
+
+/** Élément de GET /api/v2/torrents/files ; priorité 0 = non téléchargé. */
+@Serializable
+data class TorrentFile(
+    val index: Int = 0,
+    val name: String,
+    val size: Long = 0,
+    val progress: Double = 0.0,
+    val priority: Int = 1,
+) {
+    val wanted: Boolean get() = priority > 0
+    val shortName: String get() = name.substringAfterLast('/')
 }
 
 fun Long.humanSpeed(): String = if (this <= 0) "" else "${humanSize()}/s"

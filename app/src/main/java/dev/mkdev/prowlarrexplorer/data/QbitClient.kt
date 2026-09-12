@@ -3,6 +3,7 @@ package dev.mkdev.prowlarrexplorer.data
 import dev.mkdev.prowlarrexplorer.domain.QbitCategory
 import dev.mkdev.prowlarrexplorer.domain.QbitConfig
 import dev.mkdev.prowlarrexplorer.domain.Torrent
+import dev.mkdev.prowlarrexplorer.domain.TorrentFile
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -174,6 +175,34 @@ class QbitClient(private val config: () -> QbitConfig) {
         val cfg = config()
         val path = if (stopStart(cfg)) "start" else "resume"
         call(cfg) { http.submitForm("${cfg.url}/api/v2/torrents/$path", Parameters.build { append("hashes", hash) }) { auth(cfg) } }
+    }
+
+    suspend fun files(hash: String): List<TorrentFile> {
+        val cfg = config()
+        val text = call(cfg) { http.get("${cfg.url}/api/v2/torrents/files") { auth(cfg); parameter("hash", hash) } }
+        return json.decodeFromString(ListSerializer(TorrentFile.serializer()), text)
+    }
+
+    /** priorité 0 = ne pas télécharger, 1 = normale. */
+    suspend fun setFilePriority(hash: String, index: Int, priority: Int) = post(
+        "torrents/filePrio", "hash" to hash, "id" to index.toString(), "priority" to priority.toString(),
+    )
+
+    suspend fun setCategory(hash: String, category: String) = post("torrents/setCategory", "hashes" to hash, "category" to category)
+
+    suspend fun recheck(hash: String) = post("torrents/recheck", "hashes" to hash)
+
+    /** Limites en octets/s ; 0 = illimité. */
+    suspend fun setLimits(hash: String, down: Long, up: Long) {
+        post("torrents/setDownloadLimit", "hashes" to hash, "limit" to down.toString())
+        post("torrents/setUploadLimit", "hashes" to hash, "limit" to up.toString())
+    }
+
+    private suspend fun post(path: String, vararg params: Pair<String, String>) {
+        val cfg = config()
+        call(cfg) {
+            http.submitForm("${cfg.url}/api/v2/$path", Parameters.build { params.forEach { (k, v) -> append(k, v) } }) { auth(cfg) }
+        }
     }
 
     suspend fun delete(hash: String, deleteFiles: Boolean) {
