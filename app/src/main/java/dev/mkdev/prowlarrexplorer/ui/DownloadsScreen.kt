@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.foundation.rememberScrollState
@@ -76,7 +77,7 @@ import dev.mkdev.prowlarrexplorer.domain.humanSpeed
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Boolean, onSettings: () -> Unit) {
+fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Boolean, onSettings: () -> Unit, onJournal: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val configured = state.config?.configured == true
 
@@ -101,7 +102,10 @@ fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Bool
                         )
                     }
                 },
-                actions = { IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = "Réglages") } },
+                actions = {
+                    IconButton(onClick = onJournal) { Icon(Icons.Default.History, contentDescription = "Journal des envois") }
+                    IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = "Réglages") }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

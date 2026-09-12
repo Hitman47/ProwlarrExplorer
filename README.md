@@ -49,6 +49,10 @@ envoi d'une release vers le client de téléchargement configuré dans Prowlarr.
 - Navigateur intégré pour la page indexer : cookies persistants, cookie Prowlarr injecté
   quand l'indexer en a un, liens magnet / .torrent cliqués envoyés à qBittorrent.
 
+- Fiche torrent : fichiers (à télécharger ou non), catégorie, revérification, limites de vitesse.
+- Journal des envois (icône horloge dans Téléchargements) ; une entrée encore présente dans
+  qBittorrent ouvre sa fiche.
+
 ## Build
 
 ```bash

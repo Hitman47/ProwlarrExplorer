@@ -45,6 +45,7 @@ import dev.mkdev.prowlarrexplorer.domain.humanSpeed
 import dev.mkdev.prowlarrexplorer.ui.AppTheme
 import dev.mkdev.prowlarrexplorer.ui.DownloadsScreen
 import dev.mkdev.prowlarrexplorer.ui.DownloadsViewModel
+import dev.mkdev.prowlarrexplorer.ui.JournalScreen
 import dev.mkdev.prowlarrexplorer.ui.Probe
 import dev.mkdev.prowlarrexplorer.ui.ProwlarrSettings
 import dev.mkdev.prowlarrexplorer.ui.QbitSettings
@@ -108,6 +109,8 @@ class MainActivity : ComponentActivity() {
         val theme by searchVm.theme.collectAsState()
         val notifyDone by downloadsVm.notifyDone.collectAsState()
         var settingsPage by remember { mutableStateOf<SettingsPage?>(null) }
+        var showJournal by remember { mutableStateOf(false) }
+        val journal by searchVm.journal.collectAsState()
         // 0 = pas encore décidé, 1 = Prowlarr, 2 = qBittorrent, 3 = terminé.
         var onboardingStep by rememberSaveable { mutableStateOf(0) }
         var tab by rememberSaveable { mutableStateOf(0) }
@@ -187,6 +190,16 @@ class MainActivity : ComponentActivity() {
         val web = search.web
         when {
             web != null -> WebScreen(web, search, searchVm, onClose = searchVm::closeWeb, onShowDownloads = { tab = 1 })
+            showJournal -> {
+                BackHandler { showJournal = false }
+                JournalScreen(
+                    entries = journal,
+                    presentHashes = downloads.torrents.map { it.hash.lowercase() }.toSet(),
+                    onOpen = { h -> showJournal = false; tab = 1; downloadsVm.selectByHash(h) },
+                    onClear = searchVm::clearJournal,
+                    onBack = { showJournal = false },
+                )
+            }
             // Assistant : la carte de mise à jour reste accessible même sans configuration.
             onboardingStep == 1 -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f)) {
@@ -244,7 +257,7 @@ class MainActivity : ComponentActivity() {
                 val content: @Composable () -> Unit = {
                     when (tab) {
                         0 -> SearchScreen(vm = searchVm, state = search, twoPane = expanded, onSettings = openSettings, onShowDownloads = { tab = 1 })
-                        else -> DownloadsScreen(vm = downloadsVm, state = downloads, twoPane = expanded, onSettings = openSettings)
+                        else -> DownloadsScreen(vm = downloadsVm, state = downloads, twoPane = expanded, onSettings = openSettings, onJournal = { showJournal = true })
                     }
                 }
                 val downloadsLabel = downloads.totalDown.humanSpeed().ifEmpty { "Téléchargements" }

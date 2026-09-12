@@ -196,6 +196,25 @@ data class Torrent(
     }
 }
 
+/** Entrée du journal des envois. */
+@Serializable
+data class SentEntry(
+    val time: Long,
+    val title: String,
+    val indexer: String = "",
+    val category: String = "",
+    /** « qBittorrent » ou « Prowlarr ». */
+    val target: String,
+    val infoHash: String? = null,
+    val size: Long = 0,
+) {
+    companion object {
+        /** infoHash d'un lien magnet (xt=urn:btih:…), null sinon. */
+        fun hashOf(link: String): String? =
+            Regex("urn:btih:([A-Za-z0-9]{32,40})").find(link)?.groupValues?.get(1)?.lowercase()
+    }
+}
+
 /** Élément de GET /api/v2/torrents/files ; priorité 0 = non téléchargé. */
 @Serializable
 data class TorrentFile(

@@ -3,6 +3,7 @@ package dev.mkdev.prowlarrexplorer.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.mkdev.prowlarrexplorer.data.JournalStore
 import dev.mkdev.prowlarrexplorer.data.ProwlarrClient
 import dev.mkdev.prowlarrexplorer.data.QbitClient
 import dev.mkdev.prowlarrexplorer.data.SettingsStore
@@ -14,6 +15,7 @@ import dev.mkdev.prowlarrexplorer.domain.ProwlarrConfig
 import dev.mkdev.prowlarrexplorer.domain.QbitCategory
 import dev.mkdev.prowlarrexplorer.domain.QbitConfig
 import dev.mkdev.prowlarrexplorer.domain.Release
+import dev.mkdev.prowlarrexplorer.domain.SentEntry
 import dev.mkdev.prowlarrexplorer.domain.SortMode
 import dev.mkdev.prowlarrexplorer.domain.ThemeMode
 import kotlinx.coroutines.flow.SharingStarted
@@ -93,6 +95,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
     private var searchJob: Job? = null
+
+    private val journalStore = JournalStore(app)
+    val journal: StateFlow<List<SentEntry>> = journalStore.entries.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    fun clearJournal() = viewModelScope.launch { journalStore.clear() }
 
     val theme: StateFlow<ThemeMode> = store.theme.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
     fun setTheme(m: ThemeMode) = viewModelScope.launch { store.setTheme(m) }
@@ -201,7 +207,12 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.update { it.copy(adding = true) }
             runCatching { qbit.addUrl(l, s.qbCategory) }
-                .onSuccess { _state.update { it.copy(adding = false, manualAdd = null, message = Msg("Envoyé à qBittorrent", goDownloads = true)) } }
+                .onSuccess {
+                    val dn = Regex("[?&]dn=([^&]+)").find(l)?.groupValues?.get(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                    journalStore.add(SentEntry(System.currentTimeMillis(), title = dn ?: l.take(120), indexer = "manuel",
+                        category = s.qbCategory, target = "qBittorrent", infoHash = SentEntry.hashOf(l)))
+                    _state.update { it.copy(adding = false, manualAdd = null, message = Msg("Envoyé à qBittorrent", goDownloads = true)) }
+                }
                 .onFailure { e -> _state.update { it.copy(adding = false) }; toast("Envoi : ${e.short()}") }
         }
     }
@@ -223,7 +234,11 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             runCatching { qbit.addUrl(url, s.qbCategory, cookie) }
-                .onSuccess { _state.update { it.copy(message = Msg("Envoyé à qBittorrent", goDownloads = true)) } }
+                .onSuccess {
+                    journalStore.add(SentEntry(System.currentTimeMillis(), title = url.substringAfterLast('/').take(120), indexer = _state.value.web?.title ?: "",
+                        category = s.qbCategory, target = "qBittorrent", infoHash = SentEntry.hashOf(url)))
+                    _state.update { it.copy(message = Msg("Envoyé à qBittorrent", goDownloads = true)) }
+                }
                 .onFailure { e -> toast("Envoi : ${e.short()}") }
         }
     }
@@ -240,6 +255,11 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(grabbing = r.guid) }
             runCatching { if (s.direct(r)) sendToQbit(r, s.qbCategory) else client.grab(r) }
                 .onSuccess {
+                    journalStore.add(SentEntry(
+                        time = System.currentTimeMillis(), title = r.title, indexer = r.indexer,
+                        category = if (s.direct(r)) s.qbCategory else "", target = if (s.direct(r)) "qBittorrent" else "Prowlarr",
+                        infoHash = r.infoHash?.lowercase() ?: r.magnetUrl?.let { SentEntry.hashOf(it) }, size = r.size,
+                    ))
                     val where = if (s.direct(r)) "qBittorrent" + (s.qbCategory.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") else "Prowlarr"
                     _state.update { it.copy(grabbing = null, selected = if (it.selected?.guid == r.guid) null else it.selected) }
                     _state.update { it.copy(message = Msg("Envoyé à $where : ${r.title.take(40)}", goDownloads = s.direct(r))) }

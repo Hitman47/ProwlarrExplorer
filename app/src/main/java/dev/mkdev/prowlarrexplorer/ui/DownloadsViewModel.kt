@@ -129,6 +129,11 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(selected = t, files = null, filesFor = null) }
     }
 
+    /** Depuis le journal : ouvre la fiche du torrent portant ce hash s'il est présent. */
+    fun selectByHash(hash: String) {
+        _state.value.torrents.firstOrNull { it.hash.equals(hash, ignoreCase = true) }?.let { select(it) }
+    }
+
     fun loadFiles() {
         val t = _state.value.selected ?: return
         if (_state.value.filesFor == t.hash) return
