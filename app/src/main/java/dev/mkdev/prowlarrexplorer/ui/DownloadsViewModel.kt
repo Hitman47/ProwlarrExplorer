@@ -172,7 +172,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         if (it.paused) client.resume(it.hash) else client.pause(it.hash)
     }
 
-    fun delete(withFiles: Boolean) = action(_state.value.selected, close = true) { t ->
+    fun delete(withFiles: Boolean, target: Torrent? = _state.value.selected) = action(target, close = true) { t ->
         client.delete(t.hash, withFiles)
         toast(if (withFiles) "Supprimé avec ses fichiers" else "Retiré de qBittorrent")
     }
@@ -183,7 +183,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.update { it.copy(busy = t.hash) }
             runCatching { block(t) }.onFailure { e -> toast(e.short()) }
-            _state.update { it.copy(busy = null, selected = if (close) null else it.selected) }
+            _state.update { it.copy(busy = null, selected = if (close && it.selected?.hash == t.hash) null else it.selected) }
             refresh()
         }
     }

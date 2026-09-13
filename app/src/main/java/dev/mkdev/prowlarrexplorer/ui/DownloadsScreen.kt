@@ -3,6 +3,20 @@ package dev.mkdev.prowlarrexplorer.ui
 import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.anchoredDraggable
+import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,14 +60,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -79,6 +90,7 @@ import dev.mkdev.prowlarrexplorer.domain.humanSpeed
 @Composable
 fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Boolean, onSettings: () -> Unit, onJournal: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
+    var deleteTarget by remember { mutableStateOf<Torrent?>(null) }
     val configured = state.config?.configured == true
 
     LaunchedEffect(state.message) {
@@ -138,8 +150,9 @@ fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Bool
                                     )
                                 }
                                 items(list, key = { it.hash }) { t ->
-                                    SwipeToToggle(paused = t.paused, onToggle = { vm.togglePause(t) }) {
-                                        TorrentRow(t, selected = twoPane && state.selected?.hash == t.hash, onClick = { vm.select(t) })
+                                    SwipeRow(paused = t.paused, onToggle = { vm.togglePause(t) }, onDelete = { deleteTarget = t }) { open, close ->
+                                        TorrentRow(t, selected = twoPane && state.selected?.hash == t.hash,
+                                            onClick = { if (open) close() else vm.select(t) })
                                     }
                                     HorizontalDivider()
                                 }
@@ -165,6 +178,10 @@ fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Bool
             TorrentDetail(t, state, vm)
         }
     }
+
+    deleteTarget?.let { t ->
+        DeleteDialog(t, onConfirm = { withFiles -> deleteTarget = null; vm.delete(withFiles, t) }, onDismiss = { deleteTarget = null })
+    }
 }
 
 @Composable
@@ -174,37 +191,113 @@ private fun Message(text: String) {
     }
 }
 
-/** Glisser vers la droite = pause / reprise ; la ligne revient en place. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Position de la ligne : boutons révélés à gauche, repos, ou seuil de pause/reprise à droite. */
+private enum class RowPos { Actions, Closed, Toggle }
+
+/**
+ * Glisser vers la droite = pause / reprise immédiate (la ligne revient en place).
+ * Glisser vers la gauche = révèle Pause et Supprimer ; la ligne reste ouverte jusqu'au tap.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SwipeToToggle(paused: Boolean, onToggle: () -> Unit, content: @Composable () -> Unit) {
+private fun SwipeRow(
+    paused: Boolean,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable (open: Boolean, close: () -> Unit) -> Unit,
+) {
     val haptic = LocalHapticFeedback.current
-    val dismiss = rememberSwipeToDismissBoxState(
-        confirmValueChange = { v ->
-            if (v == SwipeToDismissBoxValue.StartToEnd) {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onToggle()
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val actionsW = 176.dp
+    val anchors = remember(density) {
+        with(density) {
+            DraggableAnchors {
+                RowPos.Actions at -actionsW.toPx()
+                RowPos.Closed at 0f
+                RowPos.Toggle at 96.dp.toPx()
             }
-            false
-        },
-    )
-    SwipeToDismissBox(
-        state = dismiss,
-        enableDismissFromEndToStart = false,
-        backgroundContent = {
-            Row(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                Spacer(Modifier.width(8.dp))
-                Text(if (paused) "Reprendre" else "Pause", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.SemiBold)
-            }
-        },
-    ) {
-        Box(Modifier.background(MaterialTheme.colorScheme.surface)) { content() }
+        }
     }
+    val drag = remember(anchors) { AnchoredDraggableState(initialValue = RowPos.Closed, anchors = anchors) }
+    val close: () -> Unit = { scope.launch { drag.animateTo(RowPos.Closed) } }
+
+    // Le seuil droit déclenche l'action puis la ligne revient d'elle-même.
+    LaunchedEffect(drag.settledValue) {
+        if (drag.settledValue == RowPos.Toggle) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onToggle()
+            drag.animateTo(RowPos.Closed)
+        }
+    }
+
+    val offset = drag.requireOffset()
+    Box(Modifier.fillMaxWidth()) {
+        if (offset > 0f) Row(
+            Modifier.matchParentSize().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(8.dp))
+            Text(if (paused) "Reprendre" else "Pause", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.SemiBold)
+        }
+        if (offset < 0f) Row(Modifier.matchParentSize(), horizontalArrangement = Arrangement.End) {
+            SwipeAction(
+                label = if (paused) "Reprendre" else "Pause",
+                icon = if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                bg = MaterialTheme.colorScheme.tertiary, fg = MaterialTheme.colorScheme.onTertiary,
+                width = actionsW / 2,
+            ) { close(); onToggle() }
+            SwipeAction(
+                label = "Supprimer", icon = Icons.Default.Delete,
+                bg = MaterialTheme.colorScheme.error, fg = MaterialTheme.colorScheme.onError,
+                width = actionsW / 2,
+            ) { close(); onDelete() }
+        }
+        Box(
+            Modifier
+                .offset { IntOffset(offset.roundToInt(), 0) }
+                .anchoredDraggable(drag, Orientation.Horizontal)
+                .background(MaterialTheme.colorScheme.surface),
+        ) { content(drag.settledValue == RowPos.Actions, close) }
+    }
+}
+
+@Composable
+private fun SwipeAction(label: String, icon: ImageVector, bg: Color, fg: Color, width: Dp, onClick: () -> Unit) {
+    Column(
+        Modifier.width(width).fillMaxHeight().background(bg).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = fg)
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = fg, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** Confirmation de suppression, partagée entre la liste (glisser) et la fiche. */
+@Composable
+private fun DeleteDialog(t: Torrent, onConfirm: (withFiles: Boolean) -> Unit, onDismiss: () -> Unit) {
+    var withFiles by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Supprimer ce torrent ?") },
+        text = {
+            Column {
+                Text(t.name, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { withFiles = !withFiles }) {
+                    Checkbox(checked = withFiles, onCheckedChange = { withFiles = it })
+                    Text("Supprimer aussi les fichiers sur le disque")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(withFiles) }) { Text("Supprimer", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }
 
 private fun Torrent.progressLine(): String = buildString {
@@ -248,7 +341,6 @@ fun TorrentDetail(t: Torrent, state: DownloadsState, vm: DownloadsViewModel) {
     val ctx = LocalContext.current
     val busy = state.busy == t.hash
     var confirmDelete by remember { mutableStateOf(false) }
-    var withFiles by remember { mutableStateOf(false) }
     var showLimits by remember { mutableStateOf(false) }
     var showFiles by remember { mutableStateOf(false) }
 
@@ -321,26 +413,7 @@ fun TorrentDetail(t: Torrent, state: DownloadsState, vm: DownloadsViewModel) {
 
     if (showLimits) LimitsDialog(t, onApply = { d, u -> vm.setLimits(d, u); showLimits = false }, onDismiss = { showLimits = false })
 
-    if (confirmDelete) AlertDialog(
-        onDismissRequest = { confirmDelete = false },
-        title = { Text("Supprimer ce torrent ?") },
-        text = {
-            Column {
-                Text(t.name, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { withFiles = !withFiles }) {
-                    Checkbox(checked = withFiles, onCheckedChange = { withFiles = it })
-                    Text("Supprimer aussi les fichiers sur le disque")
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { confirmDelete = false; vm.delete(withFiles) }) {
-                Text("Supprimer", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
-    )
+    if (confirmDelete) DeleteDialog(t, onConfirm = { withFiles -> confirmDelete = false; vm.delete(withFiles) }, onDismiss = { confirmDelete = false })
 }
 
 /** Fichiers du torrent : case = téléchargé ou non (priorité 0/1), taille, progression. */
