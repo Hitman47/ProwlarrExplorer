@@ -62,7 +62,7 @@ fun WebScreen(target: WebTarget, state: UiState, vm: SearchViewModel, onClose: (
 
     LaunchedEffect(state.message) {
         val m = state.message ?: return@LaunchedEffect
-        val r = snackbar.showSnackbar(m.text, actionLabel = if (m.goDownloads) "Voir" else null)
+        val r = snackbar.showTimed(m.text, actionLabel = if (m.goDownloads) "Voir" else null)
         if (r == SnackbarResult.ActionPerformed) { onClose(); onShowDownloads() }
         vm.consumeMessage()
     }
@@ -88,7 +88,7 @@ fun WebScreen(target: WebTarget, state: UiState, vm: SearchViewModel, onClose: (
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { DismissibleSnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (progress in 1..99) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())

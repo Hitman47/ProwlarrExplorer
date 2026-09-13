@@ -100,7 +100,7 @@ fun SearchScreen(
 
     LaunchedEffect(state.message) {
         val m = state.message ?: return@LaunchedEffect
-        val r = snackbar.showSnackbar(m.text, actionLabel = if (m.goDownloads) "Voir" else null)
+        val r = snackbar.showTimed(m.text, actionLabel = if (m.goDownloads) "Voir" else null)
         if (r == SnackbarResult.ActionPerformed) onShowDownloads()
         vm.consumeMessage()
     }
@@ -117,7 +117,7 @@ fun SearchScreen(
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { DismissibleSnackbarHost(snackbar) },
     ) { padding ->
         Row(Modifier.padding(padding).fillMaxSize()) {
             Column(Modifier.weight(1f).fillMaxHeight()) {

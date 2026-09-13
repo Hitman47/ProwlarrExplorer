@@ -82,7 +82,7 @@ fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Bool
     val configured = state.config?.configured == true
 
     LaunchedEffect(state.message) {
-        state.message?.let { snackbar.showSnackbar(it); vm.consumeMessage() }
+        state.message?.let { snackbar.showTimed(it); vm.consumeMessage() }
     }
     // Sondage uniquement tant que l'écran est affiché.
     DisposableEffect(configured) {
@@ -108,7 +108,7 @@ fun DownloadsScreen(vm: DownloadsViewModel, state: DownloadsState, twoPane: Bool
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { DismissibleSnackbarHost(snackbar) },
     ) { padding ->
         Row(Modifier.padding(padding).fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
